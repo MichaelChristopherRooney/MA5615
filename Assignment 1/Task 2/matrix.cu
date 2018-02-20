@@ -1,9 +1,9 @@
 #include "stdlib.h"
 #include "stdio.h"
 
-#include "matrix_funcs.h"
+#include "matrix.h"
 
-extern void print_matrix(float **mat, int nrow, int ncol){
+void print_matrix(float **mat, int nrow, int ncol){
 	int i, n;
 	for(i = 0; i < nrow; i++){
 		for(n = 0; n < ncol; n++){
@@ -13,14 +13,14 @@ extern void print_matrix(float **mat, int nrow, int ncol){
 	}
 }
 
-extern void free_matrix(float **mat){
+void free_matrix(float **mat){
 	free(mat[0]);
 	free(mat);
 }	
 
-extern float **create_empty_matrix(int nrow, int ncol){
-	float **mat = malloc(sizeof(float *) * nrow);
-	float *temp = calloc(sizeof(float), nrow * ncol);
+float **create_empty_matrix(int nrow, int ncol){
+	float **mat = (float **) malloc(sizeof(float *) * nrow);
+	float *temp = (float *) calloc(sizeof(float), nrow * ncol);
 	int i;
 	for (i = 0; i < nrow; i++) {
 		mat[i] = &(temp[ncol * i]);
@@ -28,7 +28,7 @@ extern float **create_empty_matrix(int nrow, int ncol){
 	return mat;
 }
 
-extern float **create_random_matrix(int nrow, int ncol){
+float **create_random_matrix(int nrow, int ncol){
 	float **mat = create_empty_matrix(nrow, ncol);
 	int i, n;
 	for(i = 0; i < nrow; i++){
@@ -39,7 +39,7 @@ extern float **create_random_matrix(int nrow, int ncol){
 	return mat;
 }
 
-extern float reduce_vector(float *vec, int len){
+float reduce_vector(float *vec, int len){
 	float sum = 0.0;
 	int i;
 	for(i = 0; i < len; i++){
@@ -48,7 +48,7 @@ extern float reduce_vector(float *vec, int len){
 	return sum;
 }
 
-extern void print_vector(float *vec, int len){
+void print_vector(float *vec, int len){
 	int i;
 	for(i = 0; i < len; i++){
 		printf("%f, ", vec[i]);
@@ -56,8 +56,8 @@ extern void print_vector(float *vec, int len){
 	printf("\n");
 }
 
-extern float *sum_rows_to_vector(float **mat, int nrow, int ncol){
-	float *vec = calloc(sizeof(float), nrow);
+float *sum_rows_to_vector(float **mat, int nrow, int ncol){
+	float *vec = (float *) calloc(sizeof(float), nrow);
 	int i, n;
 	for(i = 0; i < nrow; i++){
 		float row_sum = 0.0;
@@ -70,8 +70,8 @@ extern float *sum_rows_to_vector(float **mat, int nrow, int ncol){
 	return vec;
 }
 
-extern float *sum_cols_to_vector(float **mat, int nrow, int ncol){
-	float *vec = calloc(sizeof(float), ncol);
+float *sum_cols_to_vector(float **mat, int nrow, int ncol){
+	float *vec = (float *) calloc(sizeof(float), ncol);
 	int i, n;
 	for(i = 0; i < ncol; i++){
 		float col_sum = 0.0;
@@ -83,3 +83,4 @@ extern float *sum_cols_to_vector(float **mat, int nrow, int ncol){
 	//print_vector(vec, ncol);
 	return vec;
 }
+

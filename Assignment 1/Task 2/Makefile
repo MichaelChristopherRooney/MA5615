@@ -1,17 +1,17 @@
-OBJECTS = main.o matrix_funcs.o
+OBJECTS = main.o matrix.o
 EXEC_NAME = prog
-CC = gcc
 NVCC = nvcc
 CFLAGS = -Wall -lm -Wextra
+NVCCFLAGS = -g -G --use_fast_math
 
-all: main.o matrix_funcs.o
-	$(CC) -o $(EXEC_NAME) main.o matrix_funcs.o $(CFLAGS)
+all: main.o matrix.o
+	$(NVCC) -o $(EXEC_NAME) matrix.o main.o $(NVCCFLAGS)
 
-main.o: main.c matrix_funcs.h
-	$(CC) -c main.c $(CFLAGS)
+main.o: matrix.h main.cu
+	$(NVCC) -c main.cu $(NVCCFLAGS)
 
-matrix_funcs.o: matrix_funcs.c matrix_funcs.h
-	$(CC) -c matrix_funcs.c $(CFLAGS)
+matrix.o: matrix.cu matrix.h
+	$(NVCC) -c matrix.cu $(NVCCFLAGS)
 
 clean:
 	rm -f $(OBJECTS) $(EXEC_NAME)
