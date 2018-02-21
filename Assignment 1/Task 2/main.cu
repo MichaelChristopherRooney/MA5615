@@ -3,11 +3,18 @@
 
 #include "matrix.h"
 
-__global__ void matrix(float *mat, int nrow, int ncol){
+__global__ void sum_columns(float *mat, int nrow, int ncol){
 	int idx=blockIdx.x*blockDim.x+threadIdx.x;
-	if(idx < nrow * ncol){
-		printf("Thread %d has %f\n", idx, mat[idx]);
+	if(idx >= ncol){
+		return;
 	}
+	float result = 0.0;
+	for(int i = 0; i < nrow; i++){
+		int index = (nrow * i) + idx;
+		printf("Thread %d accessing %d\n", idx, index);
+		result += mat[index];
+	}
+	printf("Thread %d got %f\n", idx, result);
 }
 
 // TODO: seed and other args
@@ -25,7 +32,7 @@ int main(int argc, char *argv[]){
 	int block_size = 8;
 	dim3 dimBlock(block_size);
 	dim3 dimGrid ( (mat_size/dimBlock.x) + (!(mat_size%dimBlock.x)?0:1) );
-	matrix<<<dimGrid,dimBlock>>>(mat_gpu, nrow, ncol);
+	sum_columns<<<dimGrid,dimBlock>>>(mat_gpu, nrow, ncol);
 	free_matrix(mat);
 	cudaFree(mat_gpu);
 	return 0;
