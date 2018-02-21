@@ -5,8 +5,9 @@
 
 #include "matrix.h"
 
-extern void do_gpu_row_sum(float **mat, float *row_sum_vec, int nrow, int ncol);
-extern void do_gpu_col_sum(float **mat, float *col_sum_vec, int nrow, int ncol);
+extern void do_gpu_row_sum(float **mat, float *row_sum_vec, int nrow, int ncol, int block_size);
+extern void do_gpu_col_sum(float **mat, float *col_sum_vec, int nrow, int ncol, int block_size);
+extern void find_best_device();
 
 // These are the default values
 static long long SEED = 123456L;
@@ -14,8 +15,9 @@ static int NROWS = 10;
 static int NCOLS = 10;
 static int PRINT_TIMING = 0;
 static int PRINT_VALUES = 0;
+int BLOCK_SIZE = 8;
 
-void print_config(int seed_set, int nrows_set, int ncols_set){
+void print_config(int seed_set, int nrows_set, int ncols_set, int block_size_set){
 	if(seed_set){
 		printf("Set seed to current time in microseconds (%lld)\n", SEED);
 	} else {
@@ -30,6 +32,11 @@ void print_config(int seed_set, int nrows_set, int ncols_set){
 		printf("Ncols set to %d\n", NCOLS);
 	} else {
 		printf("Using default ncols (%d)\n", NCOLS);
+	}
+	if(block_size_set){
+		printf("Block size set to %d\n", BLOCK_SIZE);
+	} else {
+		printf("Using default block size (%d)\n", BLOCK_SIZE);
 	}
 	if(PRINT_TIMING){
 		printf("Printing timing information\n");
@@ -47,8 +54,9 @@ void parse_args(int argc, char *argv[]){
 	int seed_set = 0;
 	int nrows_set = 0;
 	int ncols_set = 0;
+	int block_size_set = 0;
 	char c;
-	while((c = getopt(argc, argv, "pnmrt")) != -1){
+	while((c = getopt(argc, argv, "bpnmrt")) != -1){
 		if(c == '?'){
 			printf("ERROR: unknown flag passed\n");
 			exit(1);
@@ -75,11 +83,15 @@ void parse_args(int argc, char *argv[]){
 		case 't':
 			PRINT_TIMING = 1;
 			break;
+		case 'b':
+			BLOCK_SIZE = atoi(argv[optind]);
+			block_size_set = 1;
+			break;
 		default: // should never get here
 			break;
 		}
 	}
-	print_config(seed_set, nrows_set, ncols_set);
+	print_config(seed_set, nrows_set, ncols_set, block_size_set);
 }
 
 struct results_s {
@@ -120,25 +132,29 @@ void print_results(float **mat, struct results_s *results){
 		printf("GPU: Row sum vector: ");
 		print_vector(results->gpu_row_vec, NROWS);
 		printf("GPU: Col sum vector: ");
-		print_vector(results->gpu_col_vec, NROWS);
+		print_vector(results->gpu_col_vec, NCOLS);
 	}
+//#define DISABLE_CPU
+#ifndef DISABLE_CPU
 	int diff = compare_vectors(results->cpu_row_vec, results->gpu_row_vec, NROWS, 0.000001);
 	if(diff == 1){
 		printf("ERROR: CPU and GPU row vectors do not match\n");
 	} else {
 		printf("SUCCESS: CPU and GPU row vectors match\n");
 	}
-	diff = compare_vectors(results->cpu_col_vec, results->gpu_col_vec, NROWS, 0.000001);
+	diff = compare_vectors(results->cpu_col_vec, results->gpu_col_vec, NCOLS, 0.000001);
 	if(diff == 1){
 		printf("ERROR: CPU and GPU col vectors do not match\n");
 	} else {
 		printf("SUCCESS: CPU and GPU col vectors match\n");
 	}
+#endif
 }
 
 void time_work(float **mat){
 	struct results_s *results = calloc(1, sizeof(struct results_s));
 	struct timeval start, end;
+#ifndef DISABLE_CPU
 	// Time row summing
 	gettimeofday(&start, NULL);
 	results->cpu_row_vec = sum_rows_to_vector(mat, NROWS, NCOLS);
@@ -159,25 +175,19 @@ void time_work(float **mat){
 	results->cpu_col_reduce_value = reduce_vector(results->cpu_col_vec, NCOLS);
 	gettimeofday(&end, NULL);
 	results->cpu_col_reduce_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+#endif
 	// Time GPU row summing
 	results->gpu_row_vec = (float *) malloc(NROWS * sizeof(float));
 	gettimeofday(&start, NULL);
-	do_gpu_row_sum(mat, results->gpu_row_vec, NROWS, NCOLS);
+	do_gpu_row_sum(mat, results->gpu_row_vec, NROWS, NCOLS, BLOCK_SIZE);
 	gettimeofday(&end, NULL);
 	results->gpu_row_sum_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	// Time GPU col summing
 	results->gpu_col_vec = (float *) malloc(NCOLS * sizeof(float));
-	printf("GPU col vec pointer: %p\n", results->gpu_col_vec);
 	gettimeofday(&start, NULL);
-	do_gpu_col_sum(mat, results->gpu_col_vec, NROWS, NCOLS);
+	do_gpu_col_sum(mat, results->gpu_col_vec, NROWS, NCOLS, BLOCK_SIZE);
 	gettimeofday(&end, NULL);
 	results->gpu_col_sum_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
-	/*
-	long long gpu_row_sum_time;
-	long long gpu_col_sum_time;
-	float *gpu_row_vec;
-	float *gpu_col_vec;
-	*/
 	// Now print results and cleanup
 	print_results(mat, results);
 	free(results->cpu_row_vec);
@@ -187,6 +197,7 @@ void time_work(float **mat){
 
 int main(int argc, char *argv[]){
 	parse_args(argc, argv);
+	find_best_device();
 	srand48(SEED);
 	float **mat = create_random_matrix(NROWS, NCOLS);
 	time_work(mat);
