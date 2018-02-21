@@ -1,7 +1,19 @@
+#include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "matrix_funcs.h"
+#include "matrix.h"
+
+int compare_vectors(float *vec1, float *vec2, int len, float epsilon){
+	int i;
+	for(i = 0; i < len; i++){
+		float diff = fabs(vec1[i] - vec2[i]);
+		if(diff > epsilon){
+			return 1;
+		}
+	}
+	return 0;
+}
 
 void print_matrix(float **mat, int nrow, int ncol){
 	int i, n;
@@ -16,11 +28,11 @@ void print_matrix(float **mat, int nrow, int ncol){
 void free_matrix(float **mat){
 	free(mat[0]);
 	free(mat);
-}	
+}
 
 float **create_empty_matrix(int nrow, int ncol){
-	float **mat = malloc(sizeof(float *) * nrow);
-	float *temp = calloc(sizeof(float), nrow * ncol);
+	float **mat = (float **) malloc(sizeof(float *) * nrow);
+	float *temp = (float *) calloc(sizeof(float), nrow * ncol);
 	int i;
 	for (i = 0; i < nrow; i++) {
 		mat[i] = &(temp[ncol * i]);
@@ -57,7 +69,7 @@ void print_vector(float *vec, int len){
 }
 
 float *sum_rows_to_vector(float **mat, int nrow, int ncol){
-	float *vec = calloc(sizeof(float), nrow);
+	float *vec = (float *) calloc(sizeof(float), nrow);
 	int i, n;
 	for(i = 0; i < nrow; i++){
 		float row_sum = 0.0;
@@ -71,7 +83,7 @@ float *sum_rows_to_vector(float **mat, int nrow, int ncol){
 }
 
 float *sum_cols_to_vector(float **mat, int nrow, int ncol){
-	float *vec = calloc(sizeof(float), ncol);
+	float *vec = (float *) calloc(sizeof(float), ncol);
 	int i, n;
 	for(i = 0; i < ncol; i++){
 		float col_sum = 0.0;
@@ -83,3 +95,4 @@ float *sum_cols_to_vector(float **mat, int nrow, int ncol){
 	//print_vector(vec, ncol);
 	return vec;
 }
+

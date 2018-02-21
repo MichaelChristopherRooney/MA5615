@@ -1,3 +1,4 @@
+int compare_vectors(float *vec1, float *vec2, int len, float epsilon);
 void print_matrix(float **mat, int nrow, int ncol);
 void free_matrix(float **mat);
 float **create_empty_matrix(int nrow, int ncol);
