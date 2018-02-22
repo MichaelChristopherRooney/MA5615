@@ -3,7 +3,7 @@
 
 #include "matrix.h"
 
-__global__ void sum_rows(DATA_TYPE *mat, DATA_TYPE *out, int nrow, int ncol){
+__global__ void sum_rows(DATA_TYPE *mat, DATA_TYPE *vec_out, int vec_size, DATA_TYPE *reduced, int nrow, int ncol){
 	int idx=blockIdx.x*blockDim.x+threadIdx.x;
 	if(idx >= nrow){
 		return;
@@ -15,11 +15,17 @@ __global__ void sum_rows(DATA_TYPE *mat, DATA_TYPE *out, int nrow, int ncol){
 		//printf("Thread %d accessing %llu on iter %d\n", idx, index, i);
 		result += mat[index];
 	}
-	out[idx] = result;
+	vec_out[idx] = result;
 	//printf("Thread %d got %f\n", idx, result);
+	if(idx == 0){
+		*reduced = 0;
+		for(int i = 0; i < nrow; i++){
+			*reduced += vec_out[i];
+		}
+	}
 }
 
-__global__ void sum_columns(DATA_TYPE *mat, DATA_TYPE *out, int nrow, int ncol){
+__global__ void sum_columns(DATA_TYPE *mat, DATA_TYPE *vec_out, int vec_size, DATA_TYPE *reduced, int nrow, int ncol){
 	int idx=blockIdx.x*blockDim.x+threadIdx.x;
 	if(idx >= ncol){
 		return;
@@ -30,33 +36,51 @@ __global__ void sum_columns(DATA_TYPE *mat, DATA_TYPE *out, int nrow, int ncol){
 		//printf("Thread %d accessing %d\n", idx, index);
 		result += mat[index];
 	}
-	out[idx] = result;
+	vec_out[idx] = result;
 	//printf("Thread %d got %f\n", idx, result);
+	if(idx == 0){
+		*reduced = 0;
+		for(int i = 0; i < ncol; i++){
+			*reduced += vec_out[i];
+		}
+	}
 }
 
-extern "C" void do_gpu_row_sum(DATA_TYPE *mat_gpu, DATA_TYPE *row_sum_vec, int nrow, int ncol, int block_size){
+extern "C" void do_gpu_row_sum(DATA_TYPE *mat_gpu, DATA_TYPE *row_sum_vec, DATA_TYPE *reduced, int nrow, int ncol, int block_size){
+	int vec_size = nrow * sizeof(DATA_TYPE);
 	DATA_TYPE *row_sum_vec_gpu;
-	cudaMalloc((void **) &row_sum_vec_gpu, nrow * sizeof(DATA_TYPE));
+	DATA_TYPE *reduced_gpu;
+	cudaMalloc((void **) &row_sum_vec_gpu, vec_size);
+	cudaMalloc((void **) &reduced_gpu, sizeof(DATA_TYPE));
 	dim3 dimBlock(block_size);
 	dim3 dimGrid ( (nrow/dimBlock.x) + (!(nrow%dimBlock.x)?0:1) );
-	sum_rows<<<dimGrid,dimBlock>>>(mat_gpu, row_sum_vec_gpu, nrow, ncol);
-	cudaMemcpy(row_sum_vec, row_sum_vec_gpu, nrow * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+	sum_rows<<<dimGrid,dimBlock>>>(mat_gpu, row_sum_vec_gpu, vec_size, reduced_gpu, nrow, ncol);
+	cudaMemcpy(row_sum_vec, row_sum_vec_gpu, vec_size, cudaMemcpyDeviceToHost);
+	cudaMemcpy(reduced, reduced_gpu, sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
 	cudaFree(row_sum_vec_gpu);
 }
 
-extern "C" void do_gpu_col_sum(DATA_TYPE *mat_gpu, DATA_TYPE *col_sum_vec, int nrow, int ncol, int block_size){
+extern "C" void do_gpu_col_sum(DATA_TYPE *mat_gpu, DATA_TYPE *col_sum_vec, DATA_TYPE *reduced, int nrow, int ncol, int block_size){
+	int vec_size = ncol * sizeof(DATA_TYPE);
 	DATA_TYPE *col_sum_vec_gpu;
-	cudaMalloc((void **) &col_sum_vec_gpu, ncol * sizeof(DATA_TYPE));
+	DATA_TYPE *reduced_gpu;
+	cudaMalloc((void **) &col_sum_vec_gpu, vec_size + sizeof(DATA_TYPE));
+	cudaMalloc((void **) &reduced_gpu, sizeof(DATA_TYPE));
 	dim3 dimBlock(block_size);
 	dim3 dimGrid ( (ncol/dimBlock.x) + (!(ncol%dimBlock.x)?0:1) );
-	sum_columns<<<dimGrid,dimBlock>>>(mat_gpu, col_sum_vec_gpu, nrow, ncol);
-	cudaMemcpy(col_sum_vec, col_sum_vec_gpu, ncol * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+	sum_columns<<<dimGrid,dimBlock>>>(mat_gpu, col_sum_vec_gpu, vec_size, reduced_gpu, nrow, ncol);
+	cudaMemcpy(col_sum_vec, col_sum_vec_gpu, vec_size, cudaMemcpyDeviceToHost);
+	cudaMemcpy(reduced, reduced_gpu, sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
 	cudaFree(col_sum_vec_gpu);
 }
 
 extern "C" DATA_TYPE *copy_mat_to_gpu(DATA_TYPE **mat, unsigned long long mat_size){
 	DATA_TYPE *mat_gpu;
-	cudaMalloc((void **) &mat_gpu, mat_size);
+	cudaError_t result = cudaMalloc((void **) &mat_gpu, mat_size);
+	if(result != cudaSuccess){
+		printf("Failed to copy matrix of size %llu bytes to device - possibly not enough free memory\n", mat_size);
+		exit(1);
+	}
 	cudaMemcpy(mat_gpu, mat[0], mat_size, cudaMemcpyHostToDevice);
 	return mat_gpu;
 }

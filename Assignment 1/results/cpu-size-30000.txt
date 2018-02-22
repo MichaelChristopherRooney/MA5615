@@ -1,0 +1,23 @@
+==========
+CONFIGURATION
+==========
+Using default seed (123456)
+Nrows set to 30000
+Ncols set to 30000
+Using default block size (8)
+Printing timing information
+Not printing matrix and vector results
+Not executing CUDA version
+==========
+END CONFIGURATION
+==========
+==========
+TIMING
+==========
+CPU: Row summing and reducing took 2135516 microseconds
+CPU: Column summing and reducing took 6838580 microseconds
+CPU: Reducing row vector took 158 microseconds
+CPU: Reducing column vector took 159 microseconds
+==========
+END TIMING
+==========
