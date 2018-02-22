@@ -1,11 +1,8 @@
 OBJECTS = main.o matrix.o gpu_code.o
 EXEC_NAME = prog
 NVCC = nvcc
-# This can be "float" or "double"
-# Note: need to run make clean if you change this
-USE_DATA_TYPE = float
-CFLAGS = -Wall -lm -Wextra -D DATA_TYPE=$(USE_DATA_TYPE)
-NVCCFLAGS = -g -G --use_fast_math -D DATA_TYPE=$(USE_DATA_TYPE)
+CFLAGS = -Wall -lm -Wextra -D DATA_TYPE=$(DATA_TYPE_USED)
+NVCCFLAGS = -g -G --use_fast_math -D DATA_TYPE=$(DATA_TYPE_USED)
 
 all: main.o matrix.o gpu_code.o
 	$(NVCC) -o $(EXEC_NAME) gpu_code.o matrix.o main.o $(NVCCFLAGS)
@@ -21,4 +18,5 @@ gpu_code.o: gpu_code.cu matrix.h
 
 clean:
 	rm -f $(OBJECTS) $(EXEC_NAME)
+
 

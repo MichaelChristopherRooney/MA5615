@@ -7,6 +7,10 @@
 declare -a BLOCK_SIZES=("4" "8" "16" "32" "64" "128" "256" "512" "1024")
 declare -a MAT_SIZES=("1000" "5000" "10000" "30000")
 
+# First with floats
+make clean
+make all DATA_TYPE_USED=float
+
 # First get CPU results for each size
 for m_index in {0..3}
 do
@@ -28,3 +32,5 @@ do
 		echo "Done"
 	done
 done
+
+# TODO: double version
