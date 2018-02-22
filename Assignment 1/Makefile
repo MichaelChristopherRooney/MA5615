@@ -1,8 +1,10 @@
 OBJECTS = main.o matrix.o gpu_code.o
 EXEC_NAME = prog
 NVCC = nvcc
-CFLAGS = -Wall -lm -Wextra
-NVCCFLAGS = -g -G --use_fast_math
+# This can be "float" or "double"
+USE_DATA_TYPE = double
+CFLAGS = -Wall -lm -Wextra -D DATA_TYPE=$(USE_DATA_TYPE)
+NVCCFLAGS = -g -G --use_fast_math -D DATA_TYPE=$(USE_DATA_TYPE)
 
 all: main.o matrix.o gpu_code.o
 	$(NVCC) -o $(EXEC_NAME) gpu_code.o matrix.o main.o $(NVCCFLAGS)

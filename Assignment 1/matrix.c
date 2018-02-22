@@ -4,10 +4,10 @@
 
 #include "matrix.h"
 
-int compare_vectors(float *vec1, float *vec2, int len, float epsilon){
+int compare_vectors(DATA_TYPE *vec1, DATA_TYPE *vec2, int len, DATA_TYPE epsilon){
 	int i;
 	for(i = 0; i < len; i++){
-		float diff = fabs(vec1[i] - vec2[i]);
+		DATA_TYPE diff = fabs(vec1[i] - vec2[i]);
 		if(diff > epsilon){
 			return 1;
 		}
@@ -15,7 +15,7 @@ int compare_vectors(float *vec1, float *vec2, int len, float epsilon){
 	return 0;
 }
 
-void print_matrix(float **mat, int nrow, int ncol){
+void print_matrix(DATA_TYPE **mat, int nrow, int ncol){
 	int i, n;
 	for(i = 0; i < nrow; i++){
 		for(n = 0; n < ncol; n++){
@@ -25,14 +25,14 @@ void print_matrix(float **mat, int nrow, int ncol){
 	}
 }
 
-void free_matrix(float **mat){
+void free_matrix(DATA_TYPE **mat){
 	free(mat[0]);
 	free(mat);
 }
 
-float **create_empty_matrix(int nrow, int ncol){
-	float **mat = (float **) malloc(sizeof(float *) * nrow);
-	float *temp = (float *) calloc(sizeof(float), nrow * ncol);
+DATA_TYPE **create_empty_matrix(int nrow, int ncol){
+	DATA_TYPE **mat = (DATA_TYPE **) malloc(sizeof(DATA_TYPE *) * nrow);
+	DATA_TYPE *temp = (DATA_TYPE *) calloc(sizeof(DATA_TYPE), nrow * ncol);
 	int i;
 	for (i = 0; i < nrow; i++) {
 		mat[i] = &(temp[ncol * i]);
@@ -40,19 +40,19 @@ float **create_empty_matrix(int nrow, int ncol){
 	return mat;
 }
 
-float **create_random_matrix(int nrow, int ncol){
-	float **mat = create_empty_matrix(nrow, ncol);
+DATA_TYPE **create_random_matrix(int nrow, int ncol){
+	DATA_TYPE **mat = create_empty_matrix(nrow, ncol);
 	int i, n;
 	for(i = 0; i < nrow; i++){
 		for(n = 0; n < ncol; n++){
-			mat[i][n] = (float) drand48();
+			mat[i][n] = (DATA_TYPE) drand48();
 		}
 	}
 	return mat;
 }
 
-float reduce_vector(float *vec, int len){
-	float sum = 0.0;
+DATA_TYPE reduce_vector(DATA_TYPE *vec, int len){
+	DATA_TYPE sum = 0.0;
 	int i;
 	for(i = 0; i < len; i++){
 		sum += vec[i];
@@ -60,7 +60,7 @@ float reduce_vector(float *vec, int len){
 	return sum;
 }
 
-void print_vector(float *vec, int len){
+void print_vector(DATA_TYPE *vec, int len){
 	int i;
 	for(i = 0; i < len; i++){
 		printf("%f, ", vec[i]);
@@ -68,11 +68,11 @@ void print_vector(float *vec, int len){
 	printf("\n");
 }
 
-float *sum_rows_to_vector(float **mat, int nrow, int ncol){
-	float *vec = (float *) calloc(sizeof(float), nrow);
+DATA_TYPE *sum_rows_to_vector(DATA_TYPE **mat, int nrow, int ncol){
+	DATA_TYPE *vec = (DATA_TYPE *) calloc(sizeof(DATA_TYPE), nrow);
 	int i, n;
 	for(i = 0; i < nrow; i++){
-		float row_sum = 0.0;
+		DATA_TYPE row_sum = 0.0;
 		for(n = 0; n < ncol; n++){
 			row_sum += mat[i][n];
 		}
@@ -82,11 +82,11 @@ float *sum_rows_to_vector(float **mat, int nrow, int ncol){
 	return vec;
 }
 
-float *sum_cols_to_vector(float **mat, int nrow, int ncol){
-	float *vec = (float *) calloc(sizeof(float), ncol);
+DATA_TYPE *sum_cols_to_vector(DATA_TYPE **mat, int nrow, int ncol){
+	DATA_TYPE *vec = (DATA_TYPE *) calloc(sizeof(DATA_TYPE), ncol);
 	int i, n;
 	for(i = 0; i < ncol; i++){
-		float col_sum = 0.0;
+		DATA_TYPE col_sum = 0.0;
 		for(n = 0; n < nrow; n++){
 			col_sum += mat[n][i];
 		}

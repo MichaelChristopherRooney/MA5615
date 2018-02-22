@@ -5,8 +5,8 @@
 
 #include "matrix.h"
 
-extern void do_gpu_row_sum(float **mat, float *row_sum_vec, int nrow, int ncol, int block_size);
-extern void do_gpu_col_sum(float **mat, float *col_sum_vec, int nrow, int ncol, int block_size);
+extern void do_gpu_row_sum(DATA_TYPE **mat, DATA_TYPE *row_sum_vec, int nrow, int ncol, int block_size);
+extern void do_gpu_col_sum(DATA_TYPE **mat, DATA_TYPE *col_sum_vec, int nrow, int ncol, int block_size);
 extern void find_best_device();
 
 // These are the default values
@@ -100,18 +100,18 @@ struct results_s {
 	long long cpu_row_reduce_time;
 	long long cpu_col_sum_time;
 	long long cpu_col_reduce_time;
-	float *cpu_row_vec;
-	float cpu_col_reduce_value;
-	float *cpu_col_vec;
-	float cpu_row_reduce_value;
+	DATA_TYPE *cpu_row_vec;
+	DATA_TYPE cpu_col_reduce_value;
+	DATA_TYPE *cpu_col_vec;
+	DATA_TYPE cpu_row_reduce_value;
 	// GPU results
 	long long gpu_row_sum_time;
 	long long gpu_col_sum_time;
-	float *gpu_row_vec;
-	float *gpu_col_vec;
+	DATA_TYPE *gpu_row_vec;
+	DATA_TYPE *gpu_col_vec;
 };
 
-void print_results(float **mat, struct results_s *results){
+void print_results(DATA_TYPE **mat, struct results_s *results){
 	if(PRINT_TIMING){
 		printf("CPU: Row summing took %lld microseconds\n", results->cpu_row_sum_time);
 		printf("CPU: Column summing took %lld microseconds\n", results->cpu_col_sum_time);
@@ -151,7 +151,7 @@ void print_results(float **mat, struct results_s *results){
 #endif
 }
 
-void time_work(float **mat){
+void time_work(DATA_TYPE **mat){
 	struct results_s *results = calloc(1, sizeof(struct results_s));
 	struct timeval start, end;
 #ifndef DISABLE_CPU
@@ -177,13 +177,13 @@ void time_work(float **mat){
 	results->cpu_col_reduce_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 #endif
 	// Time GPU row summing
-	results->gpu_row_vec = (float *) malloc(NROWS * sizeof(float));
+	results->gpu_row_vec = (DATA_TYPE *) malloc(NROWS * sizeof(DATA_TYPE));
 	gettimeofday(&start, NULL);
 	do_gpu_row_sum(mat, results->gpu_row_vec, NROWS, NCOLS, BLOCK_SIZE);
 	gettimeofday(&end, NULL);
 	results->gpu_row_sum_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	// Time GPU col summing
-	results->gpu_col_vec = (float *) malloc(NCOLS * sizeof(float));
+	results->gpu_col_vec = (DATA_TYPE *) malloc(NCOLS * sizeof(DATA_TYPE));
 	gettimeofday(&start, NULL);
 	do_gpu_col_sum(mat, results->gpu_col_vec, NROWS, NCOLS, BLOCK_SIZE);
 	gettimeofday(&end, NULL);
@@ -199,10 +199,10 @@ int main(int argc, char *argv[]){
 	parse_args(argc, argv);
 	find_best_device();
 	srand48(SEED);
-	float **mat = create_random_matrix(NROWS, NCOLS);
+	DATA_TYPE **mat = create_random_matrix(NROWS, NCOLS);
 	time_work(mat);
-	float *row_sum_vec = (float *) malloc(NROWS * sizeof(float));
-	float *col_sum_vec = (float *) malloc(NCOLS * sizeof(float));
+	DATA_TYPE *row_sum_vec = (DATA_TYPE *) malloc(NROWS * sizeof(DATA_TYPE));
+	DATA_TYPE *col_sum_vec = (DATA_TYPE *) malloc(NCOLS * sizeof(DATA_TYPE));
 	/*do_gpu_sums(mat, row_sum_vec, col_sum_vec, NROWS, NCOLS);
 	printf("GPU: Row sum vector: ");
 	print_vector(row_sum_vec, NROWS);
