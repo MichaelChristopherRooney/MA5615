@@ -2,7 +2,8 @@ OBJECTS = main.o matrix.o gpu_code.o
 EXEC_NAME = prog
 NVCC = nvcc
 # This can be "float" or "double"
-USE_DATA_TYPE = double
+# Note: need to run make clean if you change this
+USE_DATA_TYPE = float
 CFLAGS = -Wall -lm -Wextra -D DATA_TYPE=$(USE_DATA_TYPE)
 NVCCFLAGS = -g -G --use_fast_math -D DATA_TYPE=$(USE_DATA_TYPE)
 

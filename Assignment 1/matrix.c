@@ -68,8 +68,7 @@ void print_vector(DATA_TYPE *vec, int len){
 	printf("\n");
 }
 
-DATA_TYPE *sum_rows_to_vector(DATA_TYPE **mat, int nrow, int ncol){
-	DATA_TYPE *vec = (DATA_TYPE *) calloc(sizeof(DATA_TYPE), nrow);
+void sum_rows_to_vector(DATA_TYPE **mat, DATA_TYPE *vec, DATA_TYPE *reduced, int nrow, int ncol){
 	int i, n;
 	for(i = 0; i < nrow; i++){
 		DATA_TYPE row_sum = 0.0;
@@ -78,12 +77,10 @@ DATA_TYPE *sum_rows_to_vector(DATA_TYPE **mat, int nrow, int ncol){
 		}
 		vec[i] = row_sum;
 	}
-	//print_vector(vec, nrow);
-	return vec;
+	*reduced = reduce_vector(vec, nrow);
 }
 
-DATA_TYPE *sum_cols_to_vector(DATA_TYPE **mat, int nrow, int ncol){
-	DATA_TYPE *vec = (DATA_TYPE *) calloc(sizeof(DATA_TYPE), ncol);
+void sum_cols_to_vector(DATA_TYPE **mat, DATA_TYPE *vec, DATA_TYPE *reduced, int nrow, int ncol){
 	int i, n;
 	for(i = 0; i < ncol; i++){
 		DATA_TYPE col_sum = 0.0;
@@ -92,7 +89,6 @@ DATA_TYPE *sum_cols_to_vector(DATA_TYPE **mat, int nrow, int ncol){
 		}
 		vec[i] = col_sum;
 	}
-	//print_vector(vec, ncol);
-	return vec;
+	*reduced = reduce_vector(vec, ncol);
 }
 

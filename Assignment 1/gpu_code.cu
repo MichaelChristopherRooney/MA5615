@@ -34,34 +34,35 @@ __global__ void sum_columns(DATA_TYPE *mat, DATA_TYPE *out, int nrow, int ncol){
 	//printf("Thread %d got %f\n", idx, result);
 }
 
-extern "C" void do_gpu_col_sum(DATA_TYPE **mat, DATA_TYPE *col_sum_vec, int nrow, int ncol, int block_size){
-	unsigned long long mat_size = ((unsigned long long) nrow) * ((unsigned long long) ncol) * sizeof(DATA_TYPE);
-	DATA_TYPE *mat_gpu;
-	DATA_TYPE *col_sum_vec_gpu;
-	cudaMalloc((void **) &mat_gpu, mat_size);
-	cudaMalloc((void **) &col_sum_vec_gpu, ncol * sizeof(DATA_TYPE));
-	cudaMemcpy(mat_gpu, mat[0], mat_size, cudaMemcpyHostToDevice);
-	dim3 dimBlock(block_size);
-	dim3 dimGrid ( (ncol/dimBlock.x) + (!(ncol%dimBlock.x)?0:1) );
-	sum_columns<<<dimGrid,dimBlock>>>(mat_gpu, col_sum_vec_gpu, nrow, ncol);
-	cudaMemcpy(col_sum_vec, col_sum_vec_gpu, ncol * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
-	cudaFree(mat_gpu);
-	cudaFree(col_sum_vec_gpu);
-}
-
-extern "C" void do_gpu_row_sum(DATA_TYPE **mat, DATA_TYPE *row_sum_vec, int nrow, int ncol, int block_size){
-	unsigned long long mat_size = ((unsigned long long) nrow) * ((unsigned long long) ncol) * sizeof(DATA_TYPE);
-	DATA_TYPE *mat_gpu;
+extern "C" void do_gpu_row_sum(DATA_TYPE *mat_gpu, DATA_TYPE *row_sum_vec, int nrow, int ncol, int block_size){
 	DATA_TYPE *row_sum_vec_gpu;
-	cudaMalloc((void **) &mat_gpu, mat_size);
-	cudaMemcpy(mat_gpu, mat[0], mat_size, cudaMemcpyHostToDevice);
 	cudaMalloc((void **) &row_sum_vec_gpu, nrow * sizeof(DATA_TYPE));
 	dim3 dimBlock(block_size);
 	dim3 dimGrid ( (nrow/dimBlock.x) + (!(nrow%dimBlock.x)?0:1) );
 	sum_rows<<<dimGrid,dimBlock>>>(mat_gpu, row_sum_vec_gpu, nrow, ncol);
 	cudaMemcpy(row_sum_vec, row_sum_vec_gpu, nrow * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
-	cudaFree(mat_gpu);
 	cudaFree(row_sum_vec_gpu);
+}
+
+extern "C" void do_gpu_col_sum(DATA_TYPE *mat_gpu, DATA_TYPE *col_sum_vec, int nrow, int ncol, int block_size){
+	DATA_TYPE *col_sum_vec_gpu;
+	cudaMalloc((void **) &col_sum_vec_gpu, ncol * sizeof(DATA_TYPE));
+	dim3 dimBlock(block_size);
+	dim3 dimGrid ( (ncol/dimBlock.x) + (!(ncol%dimBlock.x)?0:1) );
+	sum_columns<<<dimGrid,dimBlock>>>(mat_gpu, col_sum_vec_gpu, nrow, ncol);
+	cudaMemcpy(col_sum_vec, col_sum_vec_gpu, ncol * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost);
+	cudaFree(col_sum_vec_gpu);
+}
+
+extern "C" DATA_TYPE *copy_mat_to_gpu(DATA_TYPE **mat, unsigned long long mat_size){
+	DATA_TYPE *mat_gpu;
+	cudaMalloc((void **) &mat_gpu, mat_size);
+	cudaMemcpy(mat_gpu, mat[0], mat_size, cudaMemcpyHostToDevice);
+	return mat_gpu;
+}
+
+extern "C" void free_mat_on_gpu(DATA_TYPE *mat_gpu){
+	cudaFree(mat_gpu);
 }
 
 // Taken from provided sample code
