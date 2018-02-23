@@ -1,0 +1,12 @@
+set terminal postscript eps enhanced color font 'Helvetica,10'
+set output FILENAME_OUT
+
+set xrange [X_START:X_LIM]
+set yrange [0:Y_LIM]
+set logscale x
+set xlabel 'Block size'
+set ylabel 'Time taken'
+plot FILENAME_IN using 1:2 with linespoints lt rgb 'black'
+
+exit
+
