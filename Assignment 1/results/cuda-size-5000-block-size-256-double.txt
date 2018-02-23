@@ -1,0 +1,22 @@
+==========
+CONFIGURATION
+==========
+Using default seed (123456)
+Nrows set to 5000
+Ncols set to 5000
+Block size set to 256
+Printing timing information
+Not printing matrix and vector results
+Not executing CPU version
+==========
+END CONFIGURATION
+==========
+==========
+TIMING
+==========
+CUDA: Copying the matrix to the device took 232357 microseconds
+CUDA: Row summing took 24265 microseconds
+CUDA: Col summing took 22702 microseconds
+==========
+END TIMING
+==========
