@@ -1,9 +1,9 @@
 #!/bin/bash
 
 declare -a FILENAMES_IN=(
-	"'graphs/data-gpu-float-size-1000.txt'"
-	"'graphs/data-gpu-float-size-10000.txt'"
-	"'graphs/data-gpu-copy-times.txt'"
+	"'data-gpu-float-size-1000.txt'"
+	"'data-gpu-float-size-10000.txt'"
+	"'data-gpu-copy-times.txt'"
 )
 
 declare -a FILENAMES_OUT=(
@@ -31,9 +31,9 @@ declare -a X_LIMS=(
 )
 
 declare -a PLG_FILES=(
-	"graphs/graph.plg"
-	"graphs/graph.plg"
-	"graphs/graph-no-log-scale.plg"
+	"graph.plg"
+	"graph.plg"
+	"graph-no-log-scale.plg"
 )
 
 for index in {0..2}
