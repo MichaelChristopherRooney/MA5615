@@ -39,7 +39,18 @@ DATA_TYPE **init_grid(int nrow, int ncol){
 	return grid;
 }
 
-
-
-
-
+// Returns 0 if the grids match, otherwise 1
+int compare_grids(DATA_TYPE **g1, DATA_TYPE **g2, int nrow, int ncol){
+	static DATA_TYPE epsilon = 1.E-5;
+	int i, j;
+	for(i = 0; i < nrow; i++){
+		for(j = 0; j < ncol; j++){
+			DATA_TYPE d1 = g1[i][j];
+			DATA_TYPE d2 = g2[i][j];
+			if(fabs(d1 - d2) > epsilon){
+				return 1;
+			}
+		}
+	}
+	return 0;
+}

@@ -6,7 +6,10 @@
 
 #include "grid.h"
 
-//extern void find_best_device();
+// CUDA functions from gpu_code.cu
+extern void find_best_device();
+extern DATA_TYPE *copy_grid_to_gpu(DATA_TYPE **grid, int nrow, int ncol);
+extern void do_grid_iterations_gpu(DATA_TYPE *grid_gpu, DATA_TYPE **grid_gpu_result, int nrow, int ncol, int block_size);
 
 // These are the default values
 static int NROWS = 32;
@@ -14,7 +17,6 @@ static int NCOLS = 32;
 static int NUM_ITERATIONS = 10;
 static int PRINT_TIMING = 0;
 static int PRINT_VALUES = 0;
-static DATA_TYPE PRECISION = 1.E-5;
 static int AVERAGE_ROWS = 0;
 static int SKIP_CPU = 0;
 static int SKIP_CUDA = 0;
@@ -74,7 +76,7 @@ void parse_args(int argc, char *argv[]){
 	int block_size_set = 0;
 	int iter_set = 0;
 	char c;
-	while((c = getopt(argc, argv, "cgnmptba")) != -1){
+	while((c = getopt(argc, argv, "cgnmptbav")) != -1){
 		if(c == '?'){
 			printf("ERROR: unknown flag passed\n");
 			exit(1);
@@ -109,6 +111,9 @@ void parse_args(int argc, char *argv[]){
 		case 'a':
 			AVERAGE_ROWS = 1;
 			break;
+		case 'v':
+			PRINT_VALUES = 1;
+			break;
 		default: // should never get here
 			break;
 		}
@@ -123,43 +128,49 @@ struct results_s {
 	DATA_TYPE *cpu_row_averages;
 	// GPU results
 	long long cuda_time;
+	DATA_TYPE **cuda_grid;
 };
 
 struct results_s results;
 
-void print_results(DATA_TYPE **grid){
+void print_results(){
 	if(PRINT_TIMING){
 		printf("==========\nTIMING\n==========\n");
 		if(SKIP_CPU == 0){
-			// TODO: CPU timing results
+			printf("CPU took %lld microseconds\n", results.cpu_time);
 		}
 		if(SKIP_CUDA == 0){
-			// TODO: CUDA timing results
+			printf("CUDA took %lld microseconds\n", results.cuda_time);
 		}
 		printf("==========\nEND TIMING\n==========\n");
 	}
 	if(PRINT_VALUES){
 		printf("==========\nGRID\n==========\n");
 		if(SKIP_CPU == 0){
-			// TODO: print CPU grid
+			printf("CPU grid:\n");
+			print_grid(results.cpu_grid, NROWS, NCOLS);
 		}
 		if(SKIP_CUDA == 0){
-			// TODO: print GPU grid
+			printf("CUDA grid:\n");
+			print_grid(results.cuda_grid, NROWS, NCOLS);
 		}
 		printf("==========\nEND GRID\n==========\n");
 	}
 	if(SKIP_CPU == 1 || SKIP_CUDA == 1){
 		return; // skip comparison part
 	}
-	// TODO: compare results
+	int res = compare_grids(results.cpu_grid, results.cuda_grid, NROWS, NCOLS);
+	if(res == 1){
+		printf("ERROR: CPU and CUDA grids do not match\n");
+	} else {
+		printf("SUCCESS: CPU and CUDA grids match\n");
+	}
 }
 
 // TODO: float/double weights
-// TODO: timing here
-static void solve_system_cpu(){
+static DATA_TYPE **solve_system_cpu(){
 	DATA_TYPE **cur = init_grid(NROWS, NCOLS);
 	DATA_TYPE **next = init_grid(NROWS, NCOLS);
-	//print_grid(cur, NROWS, NCOLS);
 	int i;
 	for(i = 0; i < NUM_ITERATIONS; i++){
 		int n, m;
@@ -184,29 +195,32 @@ static void solve_system_cpu(){
 		DATA_TYPE **temp = cur;
 		cur = next;
 		next = temp;
-		//printf("\n\n\nIteration: %d\n", i);
-		//print_grid(cur, NROWS, NCOLS);
 	}
 	free_grid(next);
-	results.cpu_grid = cur;
 	if(AVERAGE_ROWS){
 		printf("TODO: average CPU row results\n");
 	}
-	//printf("\n\nResults:\n");
-	//print_grid(cur, NROWS, NCOLS);
-
+	return cur;
 }
 
-void time_work(){
+void do_work(){
 	struct timeval start, end;
 	if(SKIP_CPU == 0){
-		solve_system_cpu();
+		gettimeofday(&start, NULL);
+		results.cpu_grid = solve_system_cpu();
+		gettimeofday(&end, NULL);
+		results.cpu_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	}
 	if(SKIP_CUDA == 0){
-		// TODO: CUDA version
+		gettimeofday(&start, NULL);
+		results.cuda_grid = init_grid(NROWS, NCOLS);
+		DATA_TYPE *grid_cuda_device = copy_grid_to_gpu(results.cuda_grid, NROWS, NCOLS);
+		do_grid_iterations_gpu(grid_cuda_device, results.cuda_grid, NROWS, NCOLS, BLOCK_SIZE);
+		gettimeofday(&end, NULL);
+		results.cuda_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	}
 	// Now print results and cleanup
-	//print_results(grid, results);
+	print_results();
 	if(SKIP_CUDA == 0){
 		// TODO: clean up
 	}
@@ -217,9 +231,8 @@ void time_work(){
 
 int main(int argc, char *argv[]){
 	parse_args(argc, argv);
-	//find_best_device();
-	time_work();
-	//free_grid(grid);
+	find_best_device();
+	do_work();
 	return 0;
 }
 

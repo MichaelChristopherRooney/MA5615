@@ -1,0 +1,14 @@
+==========
+CONFIGURATION
+==========
+Using default seed (123456)
+Nrows set to 30000
+Ncols set to 30000
+Block size set to 128
+Printing timing information
+Not printing matrix and vector results
+Not executing CPU version
+==========
+END CONFIGURATION
+==========
+Failed to copy matrix of size 7200000000 bytes to device - possibly not enough free memory

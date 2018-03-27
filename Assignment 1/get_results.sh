@@ -25,7 +25,7 @@ do
 	for b_index in  {0..8}
 	do
 		block_size=${BLOCK_SIZES[b_index]}
-		for m_index in {0..2} #TODO use all sizes
+		for m_index in {0..3}
 		do
 			size=${MAT_SIZES[m_index]}
 			echo "Running CUDA version with n=m=$size and block size = $block_size and data type = $data_type"
