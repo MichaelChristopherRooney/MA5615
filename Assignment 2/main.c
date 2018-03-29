@@ -8,7 +8,7 @@
 
 // CUDA functions from gpu_code.cu
 extern void find_best_device();
-extern void do_grid_iterations_gpu(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
+extern void do_grid_iterations_gpu_global_mem_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
 
 // These are the default values
 static int NROWS = 32;
@@ -125,9 +125,9 @@ struct results_s {
 	long long cpu_time;
 	DATA_TYPE **cpu_grid;
 	DATA_TYPE *cpu_row_averages;
-	// GPU results
-	long long cuda_time;
-	DATA_TYPE **cuda_grid;
+	// GPU results for the version that only uses global memory
+	long long cuda_time_global_mem_ver;
+	DATA_TYPE **cuda_grid_global_mem_ver;
 };
 
 struct results_s results;
@@ -139,7 +139,7 @@ void print_results(){
 			printf("CPU took %lld microseconds\n", results.cpu_time);
 		}
 		if(SKIP_CUDA == 0){
-			printf("CUDA took %lld microseconds\n", results.cuda_time);
+			printf("CUDA (global memory version) took %lld microseconds\n", results.cuda_time_global_mem_ver);
 		}
 		printf("==========\nEND TIMING\n==========\n");
 	}
@@ -151,14 +151,15 @@ void print_results(){
 		}
 		if(SKIP_CUDA == 0){
 			printf("CUDA grid:\n");
-			print_grid(results.cuda_grid, NROWS, NCOLS);
+			print_grid(results.cuda_grid_global_mem_ver, NROWS, NCOLS);
 		}
 		printf("==========\nEND GRID\n==========\n");
 	}
 	if(SKIP_CPU == 1 || SKIP_CUDA == 1){
 		return; // skip comparison part
 	}
-	int res = compare_grids(results.cpu_grid, results.cuda_grid, NROWS, NCOLS);
+	// TODO: compare other CUDA versions
+	int res = compare_grids(results.cpu_grid, results.cuda_grid_global_mem_ver, NROWS, NCOLS);
 	if(res == 1){
 		printf("ERROR: CPU and CUDA grids do not match\n");
 	} else {
@@ -211,11 +212,12 @@ void do_work(){
 		results.cpu_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	}
 	if(SKIP_CUDA == 0){
+		// First do global memory version
 		gettimeofday(&start, NULL);
-		results.cuda_grid = init_grid(NROWS, NCOLS);
-		do_grid_iterations_gpu(results.cuda_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
+		results.cuda_grid_global_mem_ver = init_grid(NROWS, NCOLS);
+		do_grid_iterations_gpu_global_mem_ver(results.cuda_grid_global_mem_ver, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 		gettimeofday(&end, NULL);
-		results.cuda_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+		results.cuda_time_global_mem_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	}
 	// Now print results and cleanup
 	print_results();
