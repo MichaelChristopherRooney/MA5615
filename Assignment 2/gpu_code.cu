@@ -3,29 +3,89 @@
 
 #include "grid.h"
 
-__global__ void cuda_do_grid_iterations(DATA_TYPE *grid_gpu, int nrow, int ncol){
+// Each thread takes one row
+// Uses only global memory
+// TODO: this is currently pretty crap
+// TODO: better way of ensuring that grid_gpu_1 is the final result
+__global__ void cuda_do_grid_iterations(DATA_TYPE *grid_gpu_1, DATA_TYPE *grid_gpu_2, int nrow, int ncol, int num_iter){
 	int idx=blockIdx.x*blockDim.x+threadIdx.x;
-	printf("Thread %d\n", idx);
+        long long row_offset = idx * ncol;
+        DATA_TYPE *cur = grid_gpu_1;
+        DATA_TYPE *next = grid_gpu_2;
+        if(idx >= nrow){
+                return;
+        }
+	//printf("Thread %d with row offset %lld\n", idx, row_offset);
+	//__syncthreads();
+        for(int i = 0; i < num_iter; i++){
+                for(long long n = 2; n < ncol; n++){
+                        next[row_offset+n] = 0.15*(cur[row_offset+n-2]);
+                        next[row_offset+n] += 0.65*(cur[row_offset+n-1]);
+                        next[row_offset+n] += (cur[row_offset+n]);
+                        if(n == ncol - 2){
+                                next[row_offset+n] += 1.35*(cur[row_offset+n+1]);
+                                next[row_offset+n] += 1.85*(cur[row_offset]);
+                        } else if(n == ncol - 1){
+                                next[row_offset+n] += 1.35*(cur[row_offset]);
+                                next[row_offset+n] += 1.85*(cur[row_offset+1]);
+                        } else {
+                                next[row_offset+n] += 1.35*(cur[row_offset+n+1]);
+                                next[row_offset+n] += 1.85*(cur[row_offset+n+2]);
+                        }
+                        next[row_offset+n] = next[row_offset+n] / 5.0;
+                }
+                DATA_TYPE *temp = cur;
+                cur = next;
+                next = temp;
+        }
+	if(cur != grid_gpu_1){
+		for(int n = 2; n < ncol; n++){
+			grid_gpu_1[row_offset+n] = grid_gpu_2[row_offset+n];
+		}
+	}
 }
 
-extern "C" void do_grid_iterations_gpu(DATA_TYPE *grid_gpu_device, DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size){
+extern "C" void do_grid_iterations_gpu(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter){
 	unsigned long long grid_size = (unsigned long long) nrow * (unsigned long long) ncol * (unsigned long long) sizeof(DATA_TYPE);
-	dim3 dimBlock(block_size);
-	dim3 dimGrid ( (nrow/dimBlock.x) + (!(nrow%dimBlock.x)?0:1) );
-	cuda_do_grid_iterations<<<dimGrid,dimBlock>>>(grid_gpu_device, nrow, ncol);
-	cudaMemcpy(grid_gpu_host[0], grid_gpu_device, grid_size, cudaMemcpyDeviceToHost);
-}
-
-extern "C" DATA_TYPE *copy_grid_to_gpu(DATA_TYPE **grid_gpu_host, int nrow, int ncol){
-	unsigned long long grid_size = (unsigned long long) nrow * (unsigned long long) ncol * (unsigned long long) sizeof(DATA_TYPE);
-	DATA_TYPE *grid_gpu_device;
-	cudaError_t result = cudaMalloc((void **) &grid_gpu_device, grid_size);
+	DATA_TYPE *grid_gpu_device_1;
+	DATA_TYPE *grid_gpu_device_2;
+	cudaError_t result = cudaMalloc((void **) &grid_gpu_device_1, grid_size);
 	if(result != cudaSuccess){
-		printf("Failed to copy matrix of size %llu bytes to device - possibly not enough free memory\n", grid_size);
+		printf("Failed to copy grid of size %llu bytes to device - possibly not enough free memory\n", grid_size);
 		exit(1);
 	}
-	cudaMemcpy(grid_gpu_device, grid_gpu_host[0], grid_size, cudaMemcpyHostToDevice);
-	return grid_gpu_device;
+	result = cudaMalloc((void **) &grid_gpu_device_2, grid_size);
+	if(result != cudaSuccess){
+		printf("Failed to copy grid of size %llu bytes to device - possibly not enough free memory\n", grid_size);
+		exit(1);
+	}
+	result = cudaMemcpy(grid_gpu_device_1, grid_gpu_host[0], grid_size, cudaMemcpyHostToDevice);
+	if(result != cudaSuccess){
+		printf("Failed to copy grid of size %llu bytes to device - possibly not enough free memory\n", grid_size);
+		exit(1);
+	}
+	result = cudaMemcpy(grid_gpu_device_2, grid_gpu_host[0], grid_size, cudaMemcpyHostToDevice);
+	if(result != cudaSuccess){
+		printf("Failed to copy grid of size %llu bytes to device - possibly not enough free memory\n", grid_size);
+		exit(1);
+	}
+	dim3 dimBlock(block_size);
+	dim3 dimGrid ( (nrow/dimBlock.x) + (!(nrow%dimBlock.x)?0:1) );
+	cuda_do_grid_iterations<<<dimGrid,dimBlock>>>(grid_gpu_device_1, grid_gpu_device_2, nrow, ncol, num_iter);
+	if(cudaPeekAtLastError() != cudaSuccess){
+		printf("Failed to launch kernel - error code is %d\n", cudaPeekAtLastError());
+		exit(1);
+	}
+	if(cudaPeekAtLastError() != cudaSuccess){
+		printf("Error during kernel execution - error code is %d\n", cudaPeekAtLastError());
+		exit(1);
+	}
+	result = cudaMemcpy(grid_gpu_host[0], grid_gpu_device_1, grid_size, cudaMemcpyDeviceToHost);
+	if(result != cudaSuccess){
+		printf("Failed to copy grid of size %llu bytes from device.\n", grid_size);
+		printf("cudaMemcpy returned: %d\n", result);
+		exit(1);
+	}
 }
 
 extern "C" void free_grid_on_gpu(DATA_TYPE *grid_gpu){

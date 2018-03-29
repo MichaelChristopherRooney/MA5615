@@ -8,8 +8,7 @@
 
 // CUDA functions from gpu_code.cu
 extern void find_best_device();
-extern DATA_TYPE *copy_grid_to_gpu(DATA_TYPE **grid, int nrow, int ncol);
-extern void do_grid_iterations_gpu(DATA_TYPE *grid_gpu, DATA_TYPE **grid_gpu_result, int nrow, int ncol, int block_size);
+extern void do_grid_iterations_gpu(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
 
 // These are the default values
 static int NROWS = 32;
@@ -20,7 +19,7 @@ static int PRINT_VALUES = 0;
 static int AVERAGE_ROWS = 0;
 static int SKIP_CPU = 0;
 static int SKIP_CUDA = 0;
-int BLOCK_SIZE = 8;
+int BLOCK_SIZE = 32;
 
 void print_config(int nrows_set, int ncols_set, int block_size_set, int iter_set){
 	printf("==========\nCONFIGURATION\n==========\n");
@@ -214,8 +213,7 @@ void do_work(){
 	if(SKIP_CUDA == 0){
 		gettimeofday(&start, NULL);
 		results.cuda_grid = init_grid(NROWS, NCOLS);
-		DATA_TYPE *grid_cuda_device = copy_grid_to_gpu(results.cuda_grid, NROWS, NCOLS);
-		do_grid_iterations_gpu(grid_cuda_device, results.cuda_grid, NROWS, NCOLS, BLOCK_SIZE);
+		do_grid_iterations_gpu(results.cuda_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 		gettimeofday(&end, NULL);
 		results.cuda_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	}
