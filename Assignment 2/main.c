@@ -90,10 +90,18 @@ void parse_args(int argc, char *argv[]){
 			break;
 		case 'n':
 			NROWS = atoi(argv[optind]);
+			if(NROWS < 1){
+				printf("ERROR: nrows should be at least 1\n");
+				exit(1);
+			}
 			nrows_set = 1;
 			break;
 		case 'm':
 			NCOLS = atoi(argv[optind]);
+			if(NCOLS < 5){
+				printf("ERROR: ncols should be at least 5\n");
+				exit(1);
+			}
 			ncols_set = 1;
 			break;
 
@@ -142,7 +150,12 @@ void print_results(){
 		if(SKIP_CPU == 0){
 			printf("CPU took %lld microseconds\n", results.cpu_time);
 		}
-		if(SKIP_CUDA == 0){
+		if(SKIP_CUDA == 0 && SKIP_CPU == 0){
+			float ratio = (float) results.cpu_time / (float) results.cuda_time_global_mem_ver;
+			printf("CUDA (global memory version) took %lld microseconds (%fx faster than CPU)\n", results.cuda_time_global_mem_ver, ratio);
+			ratio = (float) results.cpu_time / (float) results.cuda_time_global_mem_with_reg_ver;
+			printf("CUDA (global memory with reg version) took %lld microseconds (%fx faster than CPU)\n", results.cuda_time_global_mem_with_reg_ver, ratio);
+		} else if(SKIP_CUDA == 0){
 			printf("CUDA (global memory version) took %lld microseconds\n", results.cuda_time_global_mem_ver);
 			printf("CUDA (global memory with reg version) took %lld microseconds\n", results.cuda_time_global_mem_with_reg_ver);
 		}
