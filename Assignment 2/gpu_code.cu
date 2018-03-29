@@ -1,12 +1,14 @@
 #include "stdlib.h"
 #include "stdio.h"
+#include <string>
+#include <iostream>
 
 #include "grid.h"
 
-void custom_error_check(cudaError result, char *err_str){
+void custom_error_check(cudaError result, std::string err_str){
 	if(result != cudaSuccess){
-		printf("%s\n", err_str);
-		printf("Error code: %d\n", result);
+		std::cout << err_str << "\n";
+		std::cout << "Error code: " << result << "\n";
 		exit(1);
 	}	
 }
