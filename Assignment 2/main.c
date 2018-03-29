@@ -9,6 +9,7 @@
 // CUDA functions from gpu_code.cu
 extern void find_best_device();
 extern void do_grid_iterations_gpu_global_mem_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
+extern void do_grid_iterations_gpu_global_mem_with_reg_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
 
 // These are the default values
 static int NROWS = 32;
@@ -128,6 +129,9 @@ struct results_s {
 	// GPU results for the version that only uses global memory
 	long long cuda_time_global_mem_ver;
 	DATA_TYPE **cuda_grid_global_mem_ver;
+	// GPU results for the version that only global memory and registers
+	long long cuda_time_global_mem_with_reg_ver;
+	DATA_TYPE **cuda_grid_global_mem_with_reg_ver;
 };
 
 struct results_s results;
@@ -140,6 +144,7 @@ void print_results(){
 		}
 		if(SKIP_CUDA == 0){
 			printf("CUDA (global memory version) took %lld microseconds\n", results.cuda_time_global_mem_ver);
+			printf("CUDA (global memory with reg version) took %lld microseconds\n", results.cuda_time_global_mem_with_reg_ver);
 		}
 		printf("==========\nEND TIMING\n==========\n");
 	}
@@ -150,8 +155,10 @@ void print_results(){
 			print_grid(results.cpu_grid, NROWS, NCOLS);
 		}
 		if(SKIP_CUDA == 0){
-			printf("CUDA grid:\n");
+			printf("CUDA grid (global memory version):\n");
 			print_grid(results.cuda_grid_global_mem_ver, NROWS, NCOLS);
+			printf("CUDA grid (global memory with registers version):\n");
+			print_grid(results.cuda_grid_global_mem_with_reg_ver, NROWS, NCOLS);
 		}
 		printf("==========\nEND GRID\n==========\n");
 	}
@@ -161,9 +168,15 @@ void print_results(){
 	// TODO: compare other CUDA versions
 	int res = compare_grids(results.cpu_grid, results.cuda_grid_global_mem_ver, NROWS, NCOLS);
 	if(res == 1){
-		printf("ERROR: CPU and CUDA grids do not match\n");
+		printf("ERROR: CPU and CUDA (global memory version) grids do not match\n");
 	} else {
-		printf("SUCCESS: CPU and CUDA grids match\n");
+		printf("SUCCESS: CPU and CUDA (global memory version) grids match\n");
+	}
+	res = compare_grids(results.cpu_grid, results.cuda_grid_global_mem_with_reg_ver, NROWS, NCOLS);
+	if(res == 1){
+		printf("ERROR: CPU and CUDA (global memory and register version) grids do not match\n");
+	} else {
+		printf("SUCCESS: CPU and CUDA (global memory and register version) grids match\n");
 	}
 }
 
@@ -218,6 +231,12 @@ void do_work(){
 		do_grid_iterations_gpu_global_mem_ver(results.cuda_grid_global_mem_ver, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 		gettimeofday(&end, NULL);
 		results.cuda_time_global_mem_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+		// Now do global memory and reg version
+		gettimeofday(&start, NULL);
+		results.cuda_grid_global_mem_with_reg_ver = init_grid(NROWS, NCOLS);
+		do_grid_iterations_gpu_global_mem_with_reg_ver(results.cuda_grid_global_mem_with_reg_ver, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
+		gettimeofday(&end, NULL);
+		results.cuda_time_global_mem_with_reg_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	}
 	// Now print results and cleanup
 	print_results();
