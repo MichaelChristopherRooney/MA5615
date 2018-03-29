@@ -73,21 +73,19 @@ extern "C" void do_grid_iterations_gpu_global_mem_ver(DATA_TYPE **grid_gpu_host,
 // Each thread takes one row
 // Mostly uses global memory, also tries to use registers
 // TODO: try get this working without two buffers
-__global__ void cuda_do_grid_iterations_global_mem_with_reg_ver(DATA_TYPE *grid_gpu_1, DATA_TYPE *grid_gpu_2, int nrow, int ncol, int num_iter){
+__global__ void cuda_do_grid_iterations_global_mem_with_reg_ver(DATA_TYPE *grid_gpu, int nrow, int ncol, int num_iter){
 	int idx=blockIdx.x*blockDim.x+threadIdx.x;
         long long row_offset = idx * ncol;
         if(idx >= nrow){
                 return;
         }
-        DATA_TYPE *cur = grid_gpu_1;
-        DATA_TYPE *next = grid_gpu_2;
         for(int i = 0; i < num_iter; i++){
-		DATA_TYPE val_n_minus_2 = cur[row_offset];
-		DATA_TYPE val_n_minus_1 = cur[row_offset + 1];
-		DATA_TYPE val = cur[row_offset + 2];
+		DATA_TYPE val_n_minus_2 = grid_gpu[row_offset];
+		DATA_TYPE val_n_minus_1 = grid_gpu[row_offset + 1];
+		DATA_TYPE val = grid_gpu[row_offset + 2];
 		DATA_TYPE val_orig = val;
-		DATA_TYPE val_n_plus_1 = cur[row_offset + 3];
-		DATA_TYPE val_n_plus_2 = cur[row_offset + 4];
+		DATA_TYPE val_n_plus_1 = grid_gpu[row_offset + 3];
+		DATA_TYPE val_n_plus_2 = grid_gpu[row_offset + 4];
 		DATA_TYPE val_next;
                 for(long long n = 2; n < ncol; n++){
                         val += 0.15*val_n_minus_2;
@@ -95,50 +93,38 @@ __global__ void cuda_do_grid_iterations_global_mem_with_reg_ver(DATA_TYPE *grid_
 			val_next = val_n_plus_1;
                         if(n == ncol - 2){
                                 val += 1.35*val_n_plus_1;
-                                val += 1.85*(cur[row_offset]);
+                                val += 1.85*(grid_gpu[row_offset]);
                         } else if(n == ncol - 1){
-                                val += 1.35*(cur[row_offset]);
-                                val += 1.85*(cur[row_offset+1]);
+                                val += 1.35*(grid_gpu[row_offset]);
+                                val += 1.85*(grid_gpu[row_offset+1]);
                         } else {
                                 val += 1.35*val_n_plus_1;
                                 val += 1.85*val_n_plus_2;
 				val_n_plus_1 = val_n_plus_2;
-				val_n_plus_2 = cur[row_offset+n+3];
+				val_n_plus_2 = grid_gpu[row_offset+n+3];
                         }
 			val = val / 5.0;
-                        next[row_offset+n] = val;
+                        grid_gpu[row_offset+n] = val;
 			val_n_minus_2 = val_n_minus_1;
 			val_n_minus_1 = val_orig;
 			val = val_next;
 			val_orig = val_next;
 
                 }
-                DATA_TYPE *temp = cur;
-                cur = next;
-                next = temp;
         }
-	if(cur != grid_gpu_1){
-		for(int n = 2; n < ncol; n++){
-			grid_gpu_1[row_offset+n] = grid_gpu_2[row_offset+n];
-		}
-	}
 }
 
 extern "C" void do_grid_iterations_gpu_global_mem_with_reg_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter){
 	unsigned long long grid_size = (unsigned long long) nrow * (unsigned long long) ncol * (unsigned long long) sizeof(DATA_TYPE);
 	DATA_TYPE *grid_gpu_device_1;
-	DATA_TYPE *grid_gpu_device_2;
 	custom_error_check(cudaMalloc((void **) &grid_gpu_device_1, grid_size), "Failed to allocate on device");
-	custom_error_check(cudaMalloc((void **) &grid_gpu_device_2, grid_size), "Failed to allocate on device");
 	custom_error_check(cudaMemcpy(grid_gpu_device_1, grid_gpu_host[0], grid_size, cudaMemcpyHostToDevice), "Failed to copy data to device");
-	custom_error_check(cudaMemcpy(grid_gpu_device_2, grid_gpu_host[0], grid_size, cudaMemcpyHostToDevice), "Failed to copy data to device");
 	dim3 dimBlock(block_size);
 	dim3 dimGrid ( (nrow/dimBlock.x) + (!(nrow%dimBlock.x)?0:1) );
-	cuda_do_grid_iterations_global_mem_with_reg_ver<<<dimGrid,dimBlock>>>(grid_gpu_device_1, grid_gpu_device_2, nrow, ncol, num_iter);
+	cuda_do_grid_iterations_global_mem_with_reg_ver<<<dimGrid,dimBlock>>>(grid_gpu_device_1, nrow, ncol, num_iter);
 	custom_error_check(cudaPeekAtLastError(), "Error during kernel execution");
 	custom_error_check(cudaMemcpy(grid_gpu_host[0], grid_gpu_device_1, grid_size, cudaMemcpyDeviceToHost), "Failed to copy data FROM device");
 	custom_error_check(cudaFree(grid_gpu_device_1), "Failed to free memory on device");
-	custom_error_check(cudaFree(grid_gpu_device_2), "Failed to free memory on device");
 }
 
 // Taken from provided sample code

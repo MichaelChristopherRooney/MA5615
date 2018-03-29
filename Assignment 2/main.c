@@ -244,12 +244,14 @@ void do_work(){
 		do_grid_iterations_gpu_global_mem_ver(results.cuda_grid_global_mem_ver, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 		gettimeofday(&end, NULL);
 		results.cuda_time_global_mem_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+		sleep(1); // TODO: 
 		// Now do global memory and reg version
 		gettimeofday(&start, NULL);
 		results.cuda_grid_global_mem_with_reg_ver = init_grid(NROWS, NCOLS);
 		do_grid_iterations_gpu_global_mem_with_reg_ver(results.cuda_grid_global_mem_with_reg_ver, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 		gettimeofday(&end, NULL);
 		results.cuda_time_global_mem_with_reg_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+
 	}
 	// Now print results and cleanup
 	print_results();
