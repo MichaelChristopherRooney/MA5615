@@ -66,7 +66,8 @@ extern "C" void do_grid_iterations_gpu_global_mem_ver(DATA_TYPE **grid_gpu_host,
 	cuda_do_grid_iterations_global_mem_ver<<<dimGrid,dimBlock>>>(grid_gpu_device_1, grid_gpu_device_2, nrow, ncol, num_iter);
 	custom_error_check(cudaPeekAtLastError(), "Error during kernel execution");
 	custom_error_check(cudaMemcpy(grid_gpu_host[0], grid_gpu_device_1, grid_size, cudaMemcpyDeviceToHost), "Failed to copy data FROM device");
-	// TODO: free
+	custom_error_check(cudaFree(grid_gpu_device_1), "Failed to free memory on device");
+	custom_error_check(cudaFree(grid_gpu_device_2), "Failed to free memory on device");
 }
 
 // Taken from provided sample code
