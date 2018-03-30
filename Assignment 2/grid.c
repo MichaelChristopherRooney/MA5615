@@ -33,8 +33,8 @@ DATA_TYPE **init_grid(int nrow, int ncol){
 	DATA_TYPE **grid = create_empty_grid(nrow, ncol);
 	int i;
 	for(i = 0; i < nrow; i++){
-		grid[i][0] = 0.85*(float)((i+1)*(i+1)) / (float)(nrow * nrow);
-		grid[i][1] = (float)((i+1)*(i+1)) / (float)(nrow * nrow);
+		grid[i][0] = 0.85*(DATA_TYPE)((i+1)*(i+1)) / (DATA_TYPE)(nrow * nrow);
+		grid[i][1] = (DATA_TYPE)((i+1)*(i+1)) / (DATA_TYPE)(nrow * nrow);
 	}
 	return grid;
 }

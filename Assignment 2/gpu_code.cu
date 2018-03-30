@@ -70,11 +70,14 @@ extern "C" void do_grid_iterations_gpu_naive_ver(DATA_TYPE **grid_gpu_host, int 
 	custom_error_check(cudaFree(grid_gpu_device_2), "Failed to free memory on device");
 }
 
-// Each thread takes two rows
-// Uses registers where possible to reduce memory accesses.
-// Only requires one memory access per iteration after the first iteration.
-// The grid has an extra two columns that contain the same values as columns 0 and 1.
-// This means that if statements are not required to handle the edge cases.
+// See report for details on the optimisations used here.
+// In a nutshell this version:
+// 1) processes two rows per thread
+// 2) greatly reduces the number of memory operations by using registers
+// 3) duplicates the constant data at the end of the grid to avoid conditional statements
+// 4) each row calculates its own constant values, meaning the grid does not need to copied TO the device
+//	^ note the the grid must still be copied FROM the device
+// 5) replace grid[i] /= 5.0 with grid[i] *= (1.0/5.0), where 1.0/5.0 is calculated once at the start.
 __global__ void cuda_do_grid_iterations_fast_ver(DATA_TYPE *grid_gpu, int nrow, int ncol, int num_iter){
 	int idx=blockIdx.x*blockDim.x+threadIdx.x;
         if(idx >= (nrow/2)){
@@ -84,11 +87,21 @@ __global__ void cuda_do_grid_iterations_fast_ver(DATA_TYPE *grid_gpu, int nrow, 
         long long row_0_offset = idx * ((ncol+3)*2);
         long long row_1_offset = row_0_offset + ncol + 3;
 	// Constants for the first row (row 0)
-        DATA_TYPE row_0_col_0_fixed_val = grid_gpu[row_0_offset];
-        DATA_TYPE row_0_col_1_fixed_val = grid_gpu[row_0_offset + 1];
+        DATA_TYPE row_0_col_0_fixed_val = 0.85*(DATA_TYPE)(((idx*2)+1)*((idx*2)+1)) / (DATA_TYPE)(nrow * nrow);
+        DATA_TYPE row_0_col_1_fixed_val= (DATA_TYPE)(((idx*2)+1)*((idx*2)+1)) / (DATA_TYPE)(nrow * nrow);
 	// Constants for the second row (row 1)
-	DATA_TYPE row_1_col_0_fixed_val = grid_gpu[row_1_offset];
-        DATA_TYPE row_1_col_1_fixed_val = grid_gpu[row_1_offset + 1];
+        DATA_TYPE row_1_col_0_fixed_val = 0.85*(DATA_TYPE)(((idx*2)+2)*((idx*2)+2)) / (DATA_TYPE)(nrow * nrow);
+        DATA_TYPE row_1_col_1_fixed_val= (DATA_TYPE)(((idx*2)+2)*((idx*2)+2)) / (DATA_TYPE)(nrow * nrow);
+	// Place the constants in the first two columns of the grid.
+	grid_gpu[row_0_offset] = row_0_col_0_fixed_val;
+	grid_gpu[row_0_offset+1] = row_0_col_1_fixed_val;
+	grid_gpu[row_1_offset] = row_1_col_0_fixed_val;
+	grid_gpu[row_1_offset+1] = row_1_col_1_fixed_val;	
+	// Also place them in the 3rd and 2nd last columns so if statements are not needed for edge cases.
+	grid_gpu[row_0_offset+ncol] = row_0_col_0_fixed_val;
+	grid_gpu[row_0_offset+ncol+1] = row_0_col_1_fixed_val;
+	grid_gpu[row_1_offset+ncol] = row_1_col_0_fixed_val;
+	grid_gpu[row_1_offset+ncol+1] = row_1_col_1_fixed_val;
         for(int i = 0; i < num_iter; i++){
 		// Registers for the first row (row 0)
                 DATA_TYPE row_0_val_n_minus_2 = row_0_col_0_fixed_val;
@@ -143,7 +156,6 @@ extern "C" void do_grid_iterations_gpu_fast_ver(DATA_TYPE **grid_gpu_host, int n
 	unsigned long long grid_size = (unsigned long long) (nrow) * (unsigned long long) (ncol + 3) * (unsigned long long) sizeof(DATA_TYPE);
 	DATA_TYPE *grid_gpu_device_1;
 	custom_error_check(cudaMalloc((void **) &grid_gpu_device_1, grid_size), "Failed to allocate on device");
-	custom_error_check(cudaMemcpy(grid_gpu_device_1, grid_gpu_host[0], grid_size, cudaMemcpyHostToDevice), "Failed to copy data to device");
 	dim3 dimBlock(block_size);
 	dim3 dimGrid ( ((nrow/2)/dimBlock.x) + (!((nrow/2)%dimBlock.x)?0:1) );
 	cuda_do_grid_iterations_fast_ver<<<dimGrid,dimBlock>>>(grid_gpu_device_1, nrow, ncol, num_iter);
