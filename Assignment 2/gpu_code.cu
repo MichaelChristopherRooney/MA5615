@@ -70,41 +70,71 @@ extern "C" void do_grid_iterations_gpu_naive_ver(DATA_TYPE **grid_gpu_host, int 
 	custom_error_check(cudaFree(grid_gpu_device_2), "Failed to free memory on device");
 }
 
-// Each thread takes one row
+// Each thread takes two rows
 // Uses registers where possible to reduce memory accesses.
 // Only requires one memory access per iteration after the first iteration.
 // The grid has an extra two columns that contain the same values as columns 0 and 1.
 // This means that if statements are not required to handle the edge cases.
 __global__ void cuda_do_grid_iterations_fast_ver(DATA_TYPE *grid_gpu, int nrow, int ncol, int num_iter){
 	int idx=blockIdx.x*blockDim.x+threadIdx.x;
-        long long row_offset = idx * (ncol+3);
-        if(idx >= nrow){
+        if(idx >= (nrow/2)){
                 return;
         }
-	DATA_TYPE col_0_fixed_val = grid_gpu[row_offset];
-	DATA_TYPE col_1_fixed_val = grid_gpu[row_offset + 1];
+	DATA_TYPE one_over_five = 1.0 / 5.0;
+        long long row_0_offset = idx * ((ncol+3)*2);
+        long long row_1_offset = row_0_offset + ncol + 3;
+	// Constants for the first row (row 0)
+        DATA_TYPE row_0_col_0_fixed_val = grid_gpu[row_0_offset];
+        DATA_TYPE row_0_col_1_fixed_val = grid_gpu[row_0_offset + 1];
+	// Constants for the second row (row 1)
+	DATA_TYPE row_1_col_0_fixed_val = grid_gpu[row_1_offset];
+        DATA_TYPE row_1_col_1_fixed_val = grid_gpu[row_1_offset + 1];
         for(int i = 0; i < num_iter; i++){
-		DATA_TYPE val_n_minus_2 = col_0_fixed_val;
-		DATA_TYPE val_n_minus_1 = col_1_fixed_val;
-		DATA_TYPE val = grid_gpu[row_offset + 2];
-		DATA_TYPE val_orig = val;
-		DATA_TYPE val_n_plus_1 = grid_gpu[row_offset + 3];
-		DATA_TYPE val_n_plus_2 = grid_gpu[row_offset + 4];
-		DATA_TYPE val_next;
+		// Registers for the first row (row 0)
+                DATA_TYPE row_0_val_n_minus_2 = row_0_col_0_fixed_val;
+                DATA_TYPE row_0_val_n_minus_1 = row_0_col_1_fixed_val;
+                DATA_TYPE row_0_val = grid_gpu[row_0_offset + 2];
+                DATA_TYPE row_0_val_orig = row_0_val;
+                DATA_TYPE row_0_val_n_plus_1 = grid_gpu[row_0_offset + 3];
+                DATA_TYPE row_0_val_n_plus_2 = grid_gpu[row_0_offset + 4];
+                DATA_TYPE row_0_val_next;
+		// Registers for the second row (row 1)
+                DATA_TYPE row_1_val_n_minus_2 = row_1_col_0_fixed_val;
+                DATA_TYPE row_1_val_n_minus_1 = row_1_col_1_fixed_val;
+                DATA_TYPE row_1_val = grid_gpu[row_1_offset + 2];
+                DATA_TYPE row_1_val_orig = row_1_val;
+                DATA_TYPE row_1_val_n_plus_1 = grid_gpu[row_1_offset + 3];
+                DATA_TYPE row_1_val_n_plus_2 = grid_gpu[row_1_offset + 4];
+                DATA_TYPE row_1_val_next;
                 for(long long n = 2; n < ncol; n++){
-                        val += 0.15*val_n_minus_2;
-                        val += 0.65*val_n_minus_1;
-			val_next = val_n_plus_1;
-                        val += 1.35*val_n_plus_1;
-                        val += 1.85*val_n_plus_2;
-			val_n_plus_1 = val_n_plus_2;
-			val_n_plus_2 = grid_gpu[row_offset+n+3];
-			val = val / 5.0;
-                        grid_gpu[row_offset+n] = val;
-			val_n_minus_2 = val_n_minus_1;
-			val_n_minus_1 = val_orig;
-			val = val_next;
-			val_orig = val_next;
+			// Do calculations for the first row
+                        row_0_val += 0.15*row_0_val_n_minus_2;
+                        row_0_val += 0.65*row_0_val_n_minus_1;
+                        row_0_val_next = row_0_val_n_plus_1;
+                        row_0_val += 1.35*row_0_val_n_plus_1;
+                        row_0_val += 1.85*row_0_val_n_plus_2;
+                        row_0_val_n_plus_1 = row_0_val_n_plus_2;
+                        row_0_val_n_plus_2 = grid_gpu[row_0_offset+n+3];
+                        row_0_val = row_0_val * one_over_five;
+                        grid_gpu[row_0_offset+n] = row_0_val;
+                        row_0_val_n_minus_2 = row_0_val_n_minus_1;
+			row_0_val_n_minus_1 = row_0_val_orig;
+                        row_0_val = row_0_val_next;
+                        row_0_val_orig = row_0_val_next;
+			// DO calculations for the second row
+			row_1_val += 0.15*row_1_val_n_minus_2;
+                        row_1_val += 0.65*row_1_val_n_minus_1;
+                        row_1_val_next = row_1_val_n_plus_1;
+                        row_1_val += 1.35*row_1_val_n_plus_1;
+                        row_1_val += 1.85*row_1_val_n_plus_2;
+                        row_1_val_n_plus_1 = row_1_val_n_plus_2;
+                        row_1_val_n_plus_2 = grid_gpu[row_1_offset+n+3];
+                        row_1_val = row_1_val * one_over_five;
+                        grid_gpu[row_1_offset+n] = row_1_val;
+                        row_1_val_n_minus_2 = row_1_val_n_minus_1;
+			row_1_val_n_minus_1 = row_1_val_orig;
+                        row_1_val = row_1_val_next;
+                        row_1_val_orig = row_1_val_next;
                 }
         }
 }
@@ -115,7 +145,7 @@ extern "C" void do_grid_iterations_gpu_fast_ver(DATA_TYPE **grid_gpu_host, int n
 	custom_error_check(cudaMalloc((void **) &grid_gpu_device_1, grid_size), "Failed to allocate on device");
 	custom_error_check(cudaMemcpy(grid_gpu_device_1, grid_gpu_host[0], grid_size, cudaMemcpyHostToDevice), "Failed to copy data to device");
 	dim3 dimBlock(block_size);
-	dim3 dimGrid ( (nrow/dimBlock.x) + (!(nrow%dimBlock.x)?0:1) );
+	dim3 dimGrid ( ((nrow/2)/dimBlock.x) + (!((nrow/2)%dimBlock.x)?0:1) );
 	cuda_do_grid_iterations_fast_ver<<<dimGrid,dimBlock>>>(grid_gpu_device_1, nrow, ncol, num_iter);
 	custom_error_check(cudaPeekAtLastError(), "Error during kernel execution");
 	custom_error_check(cudaMemcpy(grid_gpu_host[0], grid_gpu_device_1, grid_size, cudaMemcpyDeviceToHost), "Failed to copy data FROM device");
