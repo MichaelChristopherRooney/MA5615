@@ -71,17 +71,21 @@ extern "C" void do_grid_iterations_gpu_naive_ver(DATA_TYPE **grid_gpu_host, int 
 }
 
 // Each thread takes one row
-// Mostly uses global memory, also tries to use registers
-// TODO: try get this working without two buffers
+// Uses registers where possible to reduce memory accesses.
+// Only requires one memory access per iteration after the first iteration.
+// The grid has an extra two columns that contain the same values as columns 0 and 1.
+// This means that if statements are not required to handle the edge cases.
 __global__ void cuda_do_grid_iterations_fast_ver(DATA_TYPE *grid_gpu, int nrow, int ncol, int num_iter){
 	int idx=blockIdx.x*blockDim.x+threadIdx.x;
-        long long row_offset = idx * ncol;
+        long long row_offset = idx * (ncol+3);
         if(idx >= nrow){
                 return;
         }
+	DATA_TYPE col_0_fixed_val = grid_gpu[row_offset];
+	DATA_TYPE col_1_fixed_val = grid_gpu[row_offset + 1];
         for(int i = 0; i < num_iter; i++){
-		DATA_TYPE val_n_minus_2 = grid_gpu[row_offset];
-		DATA_TYPE val_n_minus_1 = grid_gpu[row_offset + 1];
+		DATA_TYPE val_n_minus_2 = col_0_fixed_val;
+		DATA_TYPE val_n_minus_1 = col_1_fixed_val;
 		DATA_TYPE val = grid_gpu[row_offset + 2];
 		DATA_TYPE val_orig = val;
 		DATA_TYPE val_n_plus_1 = grid_gpu[row_offset + 3];
@@ -91,31 +95,22 @@ __global__ void cuda_do_grid_iterations_fast_ver(DATA_TYPE *grid_gpu, int nrow, 
                         val += 0.15*val_n_minus_2;
                         val += 0.65*val_n_minus_1;
 			val_next = val_n_plus_1;
-                        if(n == ncol - 2){
-                                val += 1.35*val_n_plus_1;
-                                val += 1.85*(grid_gpu[row_offset]);
-                        } else if(n == ncol - 1){
-                                val += 1.35*(grid_gpu[row_offset]);
-                                val += 1.85*(grid_gpu[row_offset+1]);
-                        } else {
-                                val += 1.35*val_n_plus_1;
-                                val += 1.85*val_n_plus_2;
-				val_n_plus_1 = val_n_plus_2;
-				val_n_plus_2 = grid_gpu[row_offset+n+3];
-                        }
+                        val += 1.35*val_n_plus_1;
+                        val += 1.85*val_n_plus_2;
+			val_n_plus_1 = val_n_plus_2;
+			val_n_plus_2 = grid_gpu[row_offset+n+3];
 			val = val / 5.0;
                         grid_gpu[row_offset+n] = val;
 			val_n_minus_2 = val_n_minus_1;
 			val_n_minus_1 = val_orig;
 			val = val_next;
 			val_orig = val_next;
-
                 }
         }
 }
 
 extern "C" void do_grid_iterations_gpu_fast_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter){
-	unsigned long long grid_size = (unsigned long long) nrow * (unsigned long long) ncol * (unsigned long long) sizeof(DATA_TYPE);
+	unsigned long long grid_size = (unsigned long long) (nrow) * (unsigned long long) (ncol + 3) * (unsigned long long) sizeof(DATA_TYPE);
 	DATA_TYPE *grid_gpu_device_1;
 	custom_error_check(cudaMalloc((void **) &grid_gpu_device_1, grid_size), "Failed to allocate on device");
 	custom_error_check(cudaMemcpy(grid_gpu_device_1, grid_gpu_host[0], grid_size, cudaMemcpyHostToDevice), "Failed to copy data to device");

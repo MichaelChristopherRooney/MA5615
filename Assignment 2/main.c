@@ -238,16 +238,21 @@ void do_work(){
 		results.cpu_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	}
 	if(SKIP_CUDA == 0){
-		// First do global memory version
+		// First do naive version
 		gettimeofday(&start, NULL);
 		results.cuda_grid_naive_ver = init_grid(NROWS, NCOLS);
 		do_grid_iterations_gpu_naive_ver(results.cuda_grid_naive_ver, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 		gettimeofday(&end, NULL);
 		results.cuda_time_naive_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 		sleep(1); // TODO: 
-		// Now do global memory and reg version
+		// Now do fast version
 		gettimeofday(&start, NULL);
-		results.cuda_grid_fast_ver = init_grid(NROWS, NCOLS);
+		results.cuda_grid_fast_ver = init_grid(NROWS, NCOLS + 3); // note: ncols + 3
+		int i;
+		for(i = 0; i < NROWS; i++){
+			results.cuda_grid_fast_ver[i][NCOLS] = results.cuda_grid_fast_ver[i][0];
+			results.cuda_grid_fast_ver[i][NCOLS+1] = results.cuda_grid_fast_ver[i][1];
+		}
 		do_grid_iterations_gpu_fast_ver(results.cuda_grid_fast_ver, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 		gettimeofday(&end, NULL);
 		results.cuda_time_fast_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
