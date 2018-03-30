@@ -70,6 +70,8 @@ extern "C" void do_grid_iterations_gpu_naive_ver(DATA_TYPE **grid_gpu_host, int 
 	custom_error_check(cudaFree(grid_gpu_device_2), "Failed to free memory on device");
 }
 
+#define ROWS_PER_THREAD 2
+
 // See report for details on the optimisations used here.
 // In a nutshell this version:
 // 1) processes two rows per thread
@@ -78,78 +80,108 @@ extern "C" void do_grid_iterations_gpu_naive_ver(DATA_TYPE **grid_gpu_host, int 
 // 4) each row calculates its own constant values, meaning the grid does not need to copied TO the device
 //	^ note the the grid must still be copied FROM the device
 // 5) replace grid[i] /= 5.0 with grid[i] *= (1.0/5.0), where 1.0/5.0 is calculated once at the start.
+// 6) unroll inner loop so two columns are processed per row per inner loop iteration
 __global__ void cuda_do_grid_iterations_fast_ver(DATA_TYPE *grid_gpu, int nrow, int ncol, int num_iter){
 	int idx=blockIdx.x*blockDim.x+threadIdx.x;
-        if(idx >= (nrow/2)){
+        if(idx >= (nrow/ROWS_PER_THREAD)){
                 return;
         }
 	DATA_TYPE one_over_five = 1.0 / 5.0;
-        long long row_0_offset = idx * ((ncol+3)*2);
-        long long row_1_offset = row_0_offset + ncol + 3;
+	long long row_0_offset = idx * ((ncol+3)*ROWS_PER_THREAD);
+	long long row_1_offset = row_0_offset + ncol + 3;
 	// Constants for the first row (row 0)
-        DATA_TYPE row_0_col_0_fixed_val = 0.85*(DATA_TYPE)(((idx*2)+1)*((idx*2)+1)) / (DATA_TYPE)(nrow * nrow);
-        DATA_TYPE row_0_col_1_fixed_val= (DATA_TYPE)(((idx*2)+1)*((idx*2)+1)) / (DATA_TYPE)(nrow * nrow);
+	DATA_TYPE row_0_col_0_fixed_val = 0.85*(DATA_TYPE)(((idx*ROWS_PER_THREAD)+1)*((idx*ROWS_PER_THREAD)+1)) / (DATA_TYPE)(nrow * nrow);
+	DATA_TYPE row_0_col_1_fixed_val= (DATA_TYPE)(((idx*ROWS_PER_THREAD)+1)*((idx*ROWS_PER_THREAD)+1)) / (DATA_TYPE)(nrow * nrow);
 	// Constants for the second row (row 1)
-        DATA_TYPE row_1_col_0_fixed_val = 0.85*(DATA_TYPE)(((idx*2)+2)*((idx*2)+2)) / (DATA_TYPE)(nrow * nrow);
-        DATA_TYPE row_1_col_1_fixed_val= (DATA_TYPE)(((idx*2)+2)*((idx*2)+2)) / (DATA_TYPE)(nrow * nrow);
+	DATA_TYPE row_1_col_0_fixed_val = 0.85*(DATA_TYPE)(((idx*ROWS_PER_THREAD)+2)*((idx*ROWS_PER_THREAD)+2)) / (DATA_TYPE)(nrow * nrow);
+	DATA_TYPE row_1_col_1_fixed_val= (DATA_TYPE)(((idx*ROWS_PER_THREAD)+2)*((idx*ROWS_PER_THREAD)+2)) / (DATA_TYPE)(nrow * nrow);
 	// Place the constants in the first two columns of the grid.
 	grid_gpu[row_0_offset] = row_0_col_0_fixed_val;
 	grid_gpu[row_0_offset+1] = row_0_col_1_fixed_val;
 	grid_gpu[row_1_offset] = row_1_col_0_fixed_val;
-	grid_gpu[row_1_offset+1] = row_1_col_1_fixed_val;	
+	grid_gpu[row_1_offset+1] = row_1_col_1_fixed_val;
 	// Also place them in the 3rd and 2nd last columns so if statements are not needed for edge cases.
 	grid_gpu[row_0_offset+ncol] = row_0_col_0_fixed_val;
 	grid_gpu[row_0_offset+ncol+1] = row_0_col_1_fixed_val;
 	grid_gpu[row_1_offset+ncol] = row_1_col_0_fixed_val;
 	grid_gpu[row_1_offset+ncol+1] = row_1_col_1_fixed_val;
-        for(int i = 0; i < num_iter; i++){
+	for(int i = 0; i < num_iter; i++){
 		// Registers for the first row (row 0)
-                DATA_TYPE row_0_val_n_minus_2 = row_0_col_0_fixed_val;
-                DATA_TYPE row_0_val_n_minus_1 = row_0_col_1_fixed_val;
-                DATA_TYPE row_0_val = grid_gpu[row_0_offset + 2];
-                DATA_TYPE row_0_val_orig = row_0_val;
-                DATA_TYPE row_0_val_n_plus_1 = grid_gpu[row_0_offset + 3];
-                DATA_TYPE row_0_val_n_plus_2 = grid_gpu[row_0_offset + 4];
-                DATA_TYPE row_0_val_next;
+		DATA_TYPE row_0_val_n_minus_2 = row_0_col_0_fixed_val;
+		DATA_TYPE row_0_val_n_minus_1 = row_0_col_1_fixed_val;
+		DATA_TYPE row_0_val = grid_gpu[row_0_offset + 2];
+		DATA_TYPE row_0_val_orig = row_0_val;
+		DATA_TYPE row_0_val_n_plus_1 = grid_gpu[row_0_offset + 3];
+		DATA_TYPE row_0_val_n_plus_2 = grid_gpu[row_0_offset + 4];
+		DATA_TYPE row_0_val_next;
 		// Registers for the second row (row 1)
-                DATA_TYPE row_1_val_n_minus_2 = row_1_col_0_fixed_val;
-                DATA_TYPE row_1_val_n_minus_1 = row_1_col_1_fixed_val;
-                DATA_TYPE row_1_val = grid_gpu[row_1_offset + 2];
-                DATA_TYPE row_1_val_orig = row_1_val;
-                DATA_TYPE row_1_val_n_plus_1 = grid_gpu[row_1_offset + 3];
-                DATA_TYPE row_1_val_n_plus_2 = grid_gpu[row_1_offset + 4];
-                DATA_TYPE row_1_val_next;
-                for(long long n = 2; n < ncol; n++){
+		DATA_TYPE row_1_val_n_minus_2 = row_1_col_0_fixed_val;
+		DATA_TYPE row_1_val_n_minus_1 = row_1_col_1_fixed_val;
+		DATA_TYPE row_1_val = grid_gpu[row_1_offset + 2];
+		DATA_TYPE row_1_val_orig = row_1_val;
+		DATA_TYPE row_1_val_n_plus_1 = grid_gpu[row_1_offset + 3];
+		DATA_TYPE row_1_val_n_plus_2 = grid_gpu[row_1_offset + 4];
+		DATA_TYPE row_1_val_next;
+		for(int n = 2; n < ncol; n = n + 2){
 			// Do calculations for the first row
-                        row_0_val += 0.15*row_0_val_n_minus_2;
-                        row_0_val += 0.65*row_0_val_n_minus_1;
-                        row_0_val_next = row_0_val_n_plus_1;
-                        row_0_val += 1.35*row_0_val_n_plus_1;
-                        row_0_val += 1.85*row_0_val_n_plus_2;
-                        row_0_val_n_plus_1 = row_0_val_n_plus_2;
-                        row_0_val_n_plus_2 = grid_gpu[row_0_offset+n+3];
-                        row_0_val = row_0_val * one_over_five;
-                        grid_gpu[row_0_offset+n] = row_0_val;
-                        row_0_val_n_minus_2 = row_0_val_n_minus_1;
+			row_0_val += 0.15*row_0_val_n_minus_2;
+			row_0_val += 0.65*row_0_val_n_minus_1;
+			row_0_val_next = row_0_val_n_plus_1;
+			row_0_val += 1.35*row_0_val_n_plus_1;
+			row_0_val += 1.85*row_0_val_n_plus_2;
+			row_0_val_n_plus_1 = row_0_val_n_plus_2;
+			row_0_val_n_plus_2 = grid_gpu[row_0_offset+n+3];
+			row_0_val = row_0_val * one_over_five;
+			grid_gpu[row_0_offset+n] = row_0_val;
+			row_0_val_n_minus_2 = row_0_val_n_minus_1;
 			row_0_val_n_minus_1 = row_0_val_orig;
-                        row_0_val = row_0_val_next;
-                        row_0_val_orig = row_0_val_next;
-			// DO calculations for the second row
+			row_0_val = row_0_val_next;
+			row_0_val_orig = row_0_val_next;
+			// Do calculations for the second row
 			row_1_val += 0.15*row_1_val_n_minus_2;
-                        row_1_val += 0.65*row_1_val_n_minus_1;
-                        row_1_val_next = row_1_val_n_plus_1;
-                        row_1_val += 1.35*row_1_val_n_plus_1;
-                        row_1_val += 1.85*row_1_val_n_plus_2;
-                        row_1_val_n_plus_1 = row_1_val_n_plus_2;
-                        row_1_val_n_plus_2 = grid_gpu[row_1_offset+n+3];
-                        row_1_val = row_1_val * one_over_five;
-                        grid_gpu[row_1_offset+n] = row_1_val;
-                        row_1_val_n_minus_2 = row_1_val_n_minus_1;
+			row_1_val += 0.65*row_1_val_n_minus_1;
+			row_1_val_next = row_1_val_n_plus_1;
+			row_1_val += 1.35*row_1_val_n_plus_1;
+			row_1_val += 1.85*row_1_val_n_plus_2;
+			row_1_val_n_plus_1 = row_1_val_n_plus_2;
+			row_1_val_n_plus_2 = grid_gpu[row_1_offset+n+3];
+			row_1_val = row_1_val * one_over_five;
+			grid_gpu[row_1_offset+n] = row_1_val;
+			row_1_val_n_minus_2 = row_1_val_n_minus_1;
 			row_1_val_n_minus_1 = row_1_val_orig;
-                        row_1_val = row_1_val_next;
-                        row_1_val_orig = row_1_val_next;
-                }
-        }
+			row_1_val = row_1_val_next;
+			row_1_val_orig = row_1_val_next;
+			// Unrolled part
+			// Do calculations for the first row
+			row_0_val += 0.15*row_0_val_n_minus_2;
+			row_0_val += 0.65*row_0_val_n_minus_1;
+			row_0_val_next = row_0_val_n_plus_1;
+			row_0_val += 1.35*row_0_val_n_plus_1;
+			row_0_val += 1.85*row_0_val_n_plus_2;
+			row_0_val_n_plus_1 = row_0_val_n_plus_2;
+			row_0_val_n_plus_2 = grid_gpu[row_0_offset+n+3+1];
+			row_0_val = row_0_val * one_over_five;
+			grid_gpu[row_0_offset+n+1] = row_0_val;
+			row_0_val_n_minus_2 = row_0_val_n_minus_1;
+			row_0_val_n_minus_1 = row_0_val_orig;
+			row_0_val = row_0_val_next;
+			row_0_val_orig = row_0_val_next;
+			// Do calculations for the second row
+			row_1_val += 0.15*row_1_val_n_minus_2;
+			row_1_val += 0.65*row_1_val_n_minus_1;
+			row_1_val_next = row_1_val_n_plus_1;
+			row_1_val += 1.35*row_1_val_n_plus_1;
+			row_1_val += 1.85*row_1_val_n_plus_2;
+			row_1_val_n_plus_1 = row_1_val_n_plus_2;
+			row_1_val_n_plus_2 = grid_gpu[row_1_offset+n+3+1];
+			row_1_val = row_1_val * one_over_five;
+			grid_gpu[row_1_offset+n+1] = row_1_val;
+			row_1_val_n_minus_2 = row_1_val_n_minus_1;
+			row_1_val_n_minus_1 = row_1_val_orig;
+			row_1_val = row_1_val_next;
+			row_1_val_orig = row_1_val_next;
+		}
+	}
 }
 
 extern "C" void do_grid_iterations_gpu_fast_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter){
@@ -157,7 +189,7 @@ extern "C" void do_grid_iterations_gpu_fast_ver(DATA_TYPE **grid_gpu_host, int n
 	DATA_TYPE *grid_gpu_device_1;
 	custom_error_check(cudaMalloc((void **) &grid_gpu_device_1, grid_size), "Failed to allocate on device");
 	dim3 dimBlock(block_size);
-	dim3 dimGrid ( ((nrow/2)/dimBlock.x) + (!((nrow/2)%dimBlock.x)?0:1) );
+	dim3 dimGrid ( ((nrow/ROWS_PER_THREAD)/dimBlock.x) + (!((nrow/ROWS_PER_THREAD)%dimBlock.x)?0:1) );
 	cuda_do_grid_iterations_fast_ver<<<dimGrid,dimBlock>>>(grid_gpu_device_1, nrow, ncol, num_iter);
 	custom_error_check(cudaPeekAtLastError(), "Error during kernel execution");
 	custom_error_check(cudaMemcpy(grid_gpu_host[0], grid_gpu_device_1, grid_size, cudaMemcpyDeviceToHost), "Failed to copy data FROM device");
