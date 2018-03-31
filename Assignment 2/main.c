@@ -247,12 +247,7 @@ void do_work(){
 		sleep(1); // TODO: 
 		// Now do fast version
 		gettimeofday(&start, NULL);
-		results.cuda_grid_fast_ver = init_grid(NROWS, NCOLS + 2); // note: ncols + 2
-		int i;
-		for(i = 0; i < NROWS; i++){
-			results.cuda_grid_fast_ver[i][NCOLS] = results.cuda_grid_fast_ver[i][0];
-			results.cuda_grid_fast_ver[i][NCOLS+1] = results.cuda_grid_fast_ver[i][1];
-		}
+		results.cuda_grid_fast_ver = init_grid(NROWS, NCOLS);
 		do_grid_iterations_gpu_fast_ver(results.cuda_grid_fast_ver, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 		gettimeofday(&end, NULL);
 		results.cuda_time_fast_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);

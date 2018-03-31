@@ -1,0 +1,44 @@
+==========
+CONFIGURATION
+==========
+Nrows set to 32
+Ncols set to 32
+Number of iterations set to 10
+Block size set to 64
+Printing timing information
+Not printing grid results
+Not averaging row temperature
+==========
+END CONFIGURATION
+==========
+Failed to copy data FROM device
+Error code: 4
+========= CUDA-MEMCHECK
+========= Invalid __global__ read of size 4
+=========     at 0x000011a0 in /home/users/mschpc/2017/rooneym2/MA5615/Assignment 2/gpu_code.cu:111:cuda_do_grid_iterations_fast_ver(float*, int, int, int)
+=========     by thread (31,0,0) in block (0,0,0)
+=========     Address 0x7059c1100 is out of bounds
+=========     Saved host backtrace up to driver entry point at kernel launch time
+=========     Host Frame:/usr/lib/x86_64-linux-gnu/libcuda.so.1 (cuLaunchKernel + 0x2cd) [0x22b12d]
+=========     Host Frame:./prog [0x1c46b]
+=========     Host Frame:./prog [0x396be]
+=========     Host Frame:./prog [0x460f]
+=========     Host Frame:./prog [0x44f2]
+=========     Host Frame:./prog [0x452a]
+=========     Host Frame:./prog [0x3f5b]
+=========     Host Frame:./prog [0x5802]
+=========     Host Frame:./prog [0x5895]
+=========     Host Frame:/lib/x86_64-linux-gnu/libc.so.6 (__libc_start_main + 0xf0) [0x20830]
+=========     Host Frame:./prog [0x3729]
+=========
+========= Program hit cudaErrorLaunchFailure (error 4) due to "unspecified launch failure" on CUDA API call to cudaMemcpy. 
+=========     Saved host backtrace up to driver entry point at error
+=========     Host Frame:/usr/lib/x86_64-linux-gnu/libcuda.so.1 [0x311153]
+=========     Host Frame:./prog [0x3efda]
+=========     Host Frame:./prog [0x3fe9]
+=========     Host Frame:./prog [0x5802]
+=========     Host Frame:./prog [0x5895]
+=========     Host Frame:/lib/x86_64-linux-gnu/libc.so.6 (__libc_start_main + 0xf0) [0x20830]
+=========     Host Frame:./prog [0x3729]
+=========
+========= ERROR SUMMARY: 2 errors
