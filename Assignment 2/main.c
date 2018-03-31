@@ -247,7 +247,7 @@ void do_work(){
 		sleep(1); // TODO: 
 		// Now do fast version
 		gettimeofday(&start, NULL);
-		results.cuda_grid_fast_ver = init_grid(NROWS, NCOLS + 3); // note: ncols + 3
+		results.cuda_grid_fast_ver = init_grid(NROWS, NCOLS + 2); // note: ncols + 2
 		int i;
 		for(i = 0; i < NROWS; i++){
 			results.cuda_grid_fast_ver[i][NCOLS] = results.cuda_grid_fast_ver[i][0];
