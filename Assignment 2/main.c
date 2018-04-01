@@ -8,10 +8,11 @@
 
 // CUDA functions from gpu_code.cu
 extern void find_best_device();
-extern void do_grid_iterations_gpu_naive_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
-extern void do_grid_iterations_gpu_fast_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
-extern void do_reduce_naive(DATA_TYPE **grid_gpu_host, DATA_TYPE *reduce_host, int nrow, int ncol, int block_size);
-extern void do_reduce_fast(DATA_TYPE **grid_gpu_host, DATA_TYPE *reduce_host, int nrow, int ncol, int block_size);
+extern DATA_TYPE *do_grid_iterations_gpu_naive_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
+extern DATA_TYPE *do_grid_iterations_gpu_fast_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
+extern void do_reduce_naive(DATA_TYPE *grid_device, DATA_TYPE *reduce_host, int nrow, int ncol, int block_size);
+extern void do_reduce_fast(DATA_TYPE *grid_device, DATA_TYPE *reduce_host, int nrow, int ncol, int block_size);
+extern void free_on_device(DATA_TYPE *device_ptr);
 
 // These are the default values
 static int NROWS = 32;
@@ -291,7 +292,7 @@ void do_cuda_work(){
 	// First do naive version
 	gettimeofday(&start, NULL);
 	DATA_TYPE **naive_grid = init_grid(NROWS, NCOLS);
-	do_grid_iterations_gpu_naive_ver(naive_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
+	DATA_TYPE *grid_device = do_grid_iterations_gpu_naive_ver(naive_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 	gettimeofday(&end, NULL);
 	results.cuda_time_naive_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	if(SKIP_CPU == 0){
@@ -305,7 +306,7 @@ void do_cuda_work(){
 	if(AVERAGE_ROWS){
 		gettimeofday(&start, NULL);
 		DATA_TYPE *naive_reduce = calloc(NROWS, sizeof(DATA_TYPE));
-		do_reduce_naive(naive_grid, naive_reduce, NROWS, NCOLS, BLOCK_SIZE);
+		do_reduce_naive(grid_device, naive_reduce, NROWS, NCOLS, BLOCK_SIZE);
 		gettimeofday(&end, NULL);
 		results.cuda_time_reduce_naive_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 		if(SKIP_CPU == 0){
@@ -317,11 +318,12 @@ void do_cuda_work(){
 		}
 		free(naive_reduce);
 	}
+	free_on_device(grid_device);
 	free_grid(naive_grid);
 	// Now do fast version
 	gettimeofday(&start, NULL);
 	DATA_TYPE **fast_grid = init_grid(NROWS, NCOLS);
-	do_grid_iterations_gpu_fast_ver(fast_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
+	grid_device = do_grid_iterations_gpu_fast_ver(fast_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
 	gettimeofday(&end, NULL);
 	results.cuda_time_fast_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 	if(SKIP_CPU == 0){
@@ -335,7 +337,7 @@ void do_cuda_work(){
 	if(AVERAGE_ROWS){
 		gettimeofday(&start, NULL);
 		DATA_TYPE *fast_reduce = calloc(NROWS, sizeof(DATA_TYPE));
-		do_reduce_fast(fast_grid, fast_reduce, NROWS, NCOLS, BLOCK_SIZE);
+		do_reduce_fast(grid_device, fast_reduce, NROWS, NCOLS, BLOCK_SIZE);
 		gettimeofday(&end, NULL);
 		results.cuda_time_reduce_fast_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
 		if(SKIP_CPU == 0){
@@ -347,6 +349,7 @@ void do_cuda_work(){
 		}
 		free(fast_reduce);
 	}
+	free_on_device(grid_device);
 	free_grid(fast_grid);
 }
 
