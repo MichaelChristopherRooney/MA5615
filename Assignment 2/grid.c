@@ -14,6 +14,14 @@ void print_grid(DATA_TYPE **grid, int nrow, int ncol){
 	}
 }
 
+void print_reduce(DATA_TYPE *reduce, int nrow){
+	int i;
+	for(i = 0; i < nrow; i++){
+		printf("%f, ", reduce[i]);
+	}
+	printf("\n");
+}
+
 void free_grid(DATA_TYPE **grid){
 	free(grid[0]);
 	free(grid);
@@ -50,6 +58,20 @@ int compare_grids(DATA_TYPE **g1, DATA_TYPE **g2, int nrow, int ncol){
 			if(fabs(d1 - d2) > epsilon){
 				return 1;
 			}
+		}
+	}
+	return 0;
+}
+
+// Returns 0 if the reductions match, otherwise 1
+int compare_reductions(DATA_TYPE *r1, DATA_TYPE *r2, int nrow){
+	static DATA_TYPE epsilon = 1.E-5;
+	int i;
+	for(i = 0; i < nrow; i++){
+		DATA_TYPE d1 = r1[i];
+		DATA_TYPE d2 = r2[i];
+		if(fabs(d1 - d2) > epsilon){
+			return 1;
 		}
 	}
 	return 0;
