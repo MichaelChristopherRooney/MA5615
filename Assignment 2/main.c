@@ -5,13 +5,20 @@
 #include <math.h>
 
 #include "grid.h"
+#include "data_type.h"
 
 // CUDA functions from gpu_code.cu
 extern void find_best_device();
-extern DATA_TYPE *do_grid_iterations_gpu_naive_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
-extern DATA_TYPE *do_grid_iterations_gpu_fast_ver(DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, int num_iter);
-extern void do_reduce_naive(DATA_TYPE *grid_device, DATA_TYPE *reduce_host, int nrow, int ncol, int block_size);
-extern void do_reduce_fast(DATA_TYPE *grid_device, DATA_TYPE *reduce_host, int nrow, int ncol, int block_size);
+extern DATA_TYPE *do_grid_iterations_gpu_naive_ver(
+                DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size,
+                int num_iter, float *time_alloc, float *copy_to, float *time_exec, 
+		float *time_copy_from);
+extern DATA_TYPE *do_grid_iterations_gpu_fast_ver(
+		DATA_TYPE **grid_gpu_host, int nrow, int ncol, int block_size, 
+		int num_iter, float *time_alloc, float *time_exec, float *time_copy_from);
+extern void do_reduce_cuda(
+		DATA_TYPE *grid_device, DATA_TYPE *reduce_host, int nrow, int ncol, 
+		int block_size, float *time_alloc, float *time_exec, float *time_copy_from);
 extern void free_on_device(DATA_TYPE *device_ptr);
 
 // These are the default values
@@ -140,17 +147,24 @@ struct results_s {
 	// GPU results for the naive version
 	long long cuda_time_naive_ver;
 	int cuda_naive_ver_matches;
+	float cuda_time_naive_alloc;
+	float cuda_time_naive_copy_to;
+	float cuda_time_naive_exec;
+	float cuda_time_naive_copy_from;
 	// GPU results for the optimised version
 	long long cuda_time_fast_ver;
 	int cuda_fast_ver_matches;
+	float cuda_time_fast_alloc;
+	float cuda_time_fast_exec;
+	float cuda_time_fast_copy_from;
 	// CPU results for the reduce
 	long long cpu_time_reduce;
-	// GPU results for the naive reduce
-	long long cuda_time_reduce_naive_ver;
-	int cuda_reduce_naive_ver_matches;
-	// GPU results for the fast reduce
-	long long cuda_time_reduce_fast_ver;
-	int cuda_reduce_fast_ver_matches;
+	// GPU results for the reduce
+	long long cuda_time_reduce;
+	int cuda_reduce_matches;
+	float cuda_reduce_time_alloc;
+	float cuda_reduce_time_exec;
+	float cuda_reduce_time_copy_from;
 };
 
 struct results_s results;
@@ -170,15 +184,66 @@ void print_result_check(){
 		printf("SUCCESS: CPU and CUDA (fast version) grids match\n");
 	}
 	if(AVERAGE_ROWS){
-		if(results.cuda_reduce_naive_ver_matches == 1){
-			printf("ERROR: CPU and CUDA (naive version) reductions do not match\n");
+		if(results.cuda_reduce_matches == 1){
+			printf("ERROR: CPU and CUDA reductions do not match\n");
 		} else {
-			printf("SUCCESS: CPU and CUDA (naive version) reductions match\n");
+			printf("SUCCESS: CPU and CUDA reductions match\n");
 		}
-		if(results.cuda_reduce_fast_ver_matches == 1){
-			printf("ERROR: CPU and CUDA (fast version) reductions do not match\n");
+	}
+}
+
+void print_fast_timing(){
+	if(SKIP_CUDA == 1){
+		return;
+	}
+	if(SKIP_CPU == 0){
+		float ratio = (float) results.cpu_time / (float) results.cuda_time_fast_ver;
+		printf("CUDA FAST: Took %lld milliseconds overall excluding reduce (%fx faster than CPU)\n", results.cuda_time_fast_ver, ratio);
+	} else {
+		printf("CUDA FAST: Took %lld milliseconds overall excluding reduce\n", results.cuda_time_fast_ver);
+	}
+	printf("CUDA FAST: Allocating one device buffer took %f milliseconds\n", results.cuda_time_fast_alloc);
+	printf("CUDA FAST: No copy to device needed - no time taken\n");
+	printf("CUDA FAST: Execution of fast kernel took %f milliseconds\n", results.cuda_time_fast_exec);
+	printf("CUDA FAST: Copying buffer from device took %f milliseconds\n", results.cuda_time_fast_copy_from);
+}
+
+void print_naive_timing(){
+	if(SKIP_CUDA == 1){
+		return;
+	}
+	if(SKIP_CPU == 0){
+		float ratio = (float) results.cpu_time / (float) results.cuda_time_naive_ver;
+		printf("CUDA NAIVE: Took %lld milliseconds overall excluding reduce (%fx faster than CPU)\n", results.cuda_time_naive_ver, ratio);
+	} else {
+		printf("CUDA NAIVE: Took %lld milliseconds overall excluding reduce\n", results.cuda_time_naive_ver);
+	}
+	printf("CUDA NAIVE: Allocating two device buffers took %f milliseconds\n", results.cuda_time_naive_alloc);
+	printf("CUDA NAIVE: Copying two buffers to device took %f milliseconds\n", results.cuda_time_naive_copy_to);
+	printf("CUDA NAIVE: Execution of naive kernel took %f milliseconds\n", results.cuda_time_naive_exec);
+	printf("CUDA NAIVE: Copying one buffer from device took %f milliseconds\n", results.cuda_time_naive_copy_from);
+}
+
+void print_cuda_reduce_timing(){
+	if(AVERAGE_ROWS && SKIP_CUDA == 0){
+		if(SKIP_CPU == 0){
+			float ratio = (float) results.cpu_time_reduce / (float) results.cuda_time_reduce;
+			printf("CUDA REDUCE: Took %lld milliseconds overall (%fx faster than CPU)\n", results.cuda_time_reduce, ratio);
 		} else {
-			printf("SUCCESS: CPU and CUDA (fast version) reductions match\n");
+			printf("CUDA REDUCE: Took %lld milliseconds overall\n", results.cuda_time_reduce);
+		}
+		printf("CUDA REDUCE: Allocating device buffer took %f milliseconds\n", results.cuda_reduce_time_alloc);
+		printf("CUDA REDUCE: No copy to device needed - no time taken\n");
+		printf("CUDA REDUCE: Execution of reduce kernel took %f milliseconds\n", results.cuda_reduce_time_exec);
+		printf("CUDA REDUCE: Copying buffer from device took %f milliseconds\n", results.cuda_reduce_time_copy_from);
+	}
+}
+
+void print_cpu_timing(){
+	if(SKIP_CPU == 0){
+		printf("CPU: Took %lld milliseconds overall excluding reduce\n", results.cpu_time);
+		if(AVERAGE_ROWS){
+			printf("CPU: Reduce took %lld milliseconds\n", results.cpu_time_reduce);
 		}
 	}
 }
@@ -186,31 +251,10 @@ void print_result_check(){
 void print_timing(){
 	if(PRINT_TIMING){
 		printf("==========\nTIMING\n==========\n");
-		if(SKIP_CPU == 0){
-			printf("CPU took %lld microseconds\n", results.cpu_time);
-			if(AVERAGE_ROWS){
-				printf("CPU reduce took %lld microseconds\n", results.cpu_time_reduce);
-			}
-		}
-		if(SKIP_CUDA == 0 && SKIP_CPU == 0){
-			float ratio = (float) results.cpu_time / (float) results.cuda_time_naive_ver;
-			printf("CUDA (naive version) took %lld microseconds (%fx faster than CPU)\n", results.cuda_time_naive_ver, ratio);
-			ratio = (float) results.cpu_time / (float) results.cuda_time_fast_ver;
-			printf("CUDA (fast version) took %lld microseconds (%fx faster than CPU)\n", results.cuda_time_fast_ver, ratio);
-			if(AVERAGE_ROWS){
-				ratio = (float) results.cpu_time_reduce / (float) results.cuda_time_reduce_naive_ver;
-				printf("CUDA reduce (naive version) took %lld microseconds (%fx faster than CPU)\n", results.cuda_time_reduce_naive_ver, ratio);
-				ratio = (float) results.cpu_time_reduce / (float) results.cuda_time_reduce_fast_ver;
-				printf("CUDA reduce (fast version) took %lld microseconds (%fx faster than CPU)\n", results.cuda_time_reduce_fast_ver, ratio);
-			}
-		} else if(SKIP_CUDA == 0){
-			printf("CUDA (naive version) took %lld microseconds\n", results.cuda_time_naive_ver);
-			printf("CUDA (fast version) took %lld microseconds\n", results.cuda_time_fast_ver);
-			if(AVERAGE_ROWS){
-				printf("CUDA reduce (naive version) took %lld microseconds\n", results.cuda_time_reduce_naive_ver);
-				printf("CUDA reduce (fast version) took %lld microseconds\n", results.cuda_time_reduce_fast_ver);
-			}
-		}
+		print_cpu_timing();
+		print_naive_timing();
+		print_fast_timing();
+		print_cuda_reduce_timing();
 		printf("==========\nEND TIMING\n==========\n");
 	}
 }
@@ -270,7 +314,7 @@ void do_cpu_work(){
 	gettimeofday(&start, NULL);
 	results.cpu_grid = solve_system_cpu();
 	gettimeofday(&end, NULL);
-	results.cpu_time = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+	results.cpu_time = ((end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec)) / 1000;
 	if(PRINT_VALUES){
 		printf("CPU grid:\n");
 		print_grid(results.cpu_grid, NROWS, NCOLS);
@@ -279,7 +323,7 @@ void do_cpu_work(){
 		gettimeofday(&start, NULL);
 		reduce_cpu();
 		gettimeofday(&end, NULL);
-		results.cpu_time_reduce = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+		results.cpu_time_reduce = ((end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec)) / 1000;
 		if(PRINT_VALUES){
 			printf("CPU reduce:\n");
 			print_reduce(results.cpu_reduce, NROWS);
@@ -292,9 +336,13 @@ void do_cuda_work(){
 	// First do naive version
 	gettimeofday(&start, NULL);
 	DATA_TYPE **naive_grid = init_grid(NROWS, NCOLS);
-	DATA_TYPE *grid_device = do_grid_iterations_gpu_naive_ver(naive_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
+	DATA_TYPE *grid_device = do_grid_iterations_gpu_naive_ver(
+		naive_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS,
+		&results.cuda_time_naive_alloc, &results.cuda_time_naive_copy_to,
+		&results.cuda_time_naive_exec, &results.cuda_time_naive_copy_from
+	);
 	gettimeofday(&end, NULL);
-	results.cuda_time_naive_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+	results.cuda_time_naive_ver = ((end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec)) / 1000;
 	if(SKIP_CPU == 0){
 		results.cuda_naive_ver_matches = compare_grids(results.cpu_grid, naive_grid, NROWS, NCOLS);
 	}
@@ -302,30 +350,18 @@ void do_cuda_work(){
 		printf("CUDA grid (naive version):\n");
 		print_grid(naive_grid, NROWS, NCOLS);
 	}
-	// TODO: reuse results below
-	if(AVERAGE_ROWS){
-		gettimeofday(&start, NULL);
-		DATA_TYPE *naive_reduce = calloc(NROWS, sizeof(DATA_TYPE));
-		do_reduce_naive(grid_device, naive_reduce, NROWS, NCOLS, BLOCK_SIZE);
-		gettimeofday(&end, NULL);
-		results.cuda_time_reduce_naive_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
-		if(SKIP_CPU == 0){
-			results.cuda_reduce_naive_ver_matches = compare_reductions(results.cpu_reduce, naive_reduce, NROWS);
-		}
-		if(PRINT_VALUES){
-			printf("CUDA reduce (naive version):\n");
-			print_reduce(naive_reduce, NROWS);
-		}
-		free(naive_reduce);
-	}
 	free_on_device(grid_device);
 	free_grid(naive_grid);
 	// Now do fast version
 	gettimeofday(&start, NULL);
 	DATA_TYPE **fast_grid = init_grid(NROWS, NCOLS);
-	grid_device = do_grid_iterations_gpu_fast_ver(fast_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS);
+	grid_device = do_grid_iterations_gpu_fast_ver(
+		fast_grid, NROWS, NCOLS, BLOCK_SIZE, NUM_ITERATIONS,
+		&results.cuda_time_fast_alloc, &results.cuda_time_fast_exec,
+		&results.cuda_time_fast_copy_from
+	);
 	gettimeofday(&end, NULL);
-	results.cuda_time_fast_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+	results.cuda_time_fast_ver = ((end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec)) / 1000;
 	if(SKIP_CPU == 0){
 		results.cuda_fast_ver_matches = compare_grids(results.cpu_grid, fast_grid, NROWS, NCOLS);
 	}
@@ -333,21 +369,25 @@ void do_cuda_work(){
 		printf("CUDA grid (fast version):\n");
 		print_grid(fast_grid, NROWS, NCOLS);
 	}
-	// TODO: reuse results below
+	// Reduce reuses values from the fast version's grid
 	if(AVERAGE_ROWS){
 		gettimeofday(&start, NULL);
-		DATA_TYPE *fast_reduce = calloc(NROWS, sizeof(DATA_TYPE));
-		do_reduce_fast(grid_device, fast_reduce, NROWS, NCOLS, BLOCK_SIZE);
+		DATA_TYPE *cuda_reduce = calloc(NROWS, sizeof(DATA_TYPE));
+		do_reduce_cuda(
+			grid_device, cuda_reduce, NROWS, NCOLS, BLOCK_SIZE, 
+			&results.cuda_reduce_time_alloc, &results.cuda_reduce_time_exec,
+			&results.cuda_reduce_time_copy_from
+		);
 		gettimeofday(&end, NULL);
-		results.cuda_time_reduce_fast_ver = (end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec);
+		results.cuda_time_reduce = ((end.tv_sec - start.tv_sec) * 1000000L + (end.tv_usec - start.tv_usec)) / 1000;
 		if(SKIP_CPU == 0){
-			results.cuda_reduce_fast_ver_matches = compare_reductions(results.cpu_reduce, fast_reduce, NROWS);
+			results.cuda_reduce_matches = compare_reductions(results.cpu_reduce, cuda_reduce, NROWS);
 		}
 		if(PRINT_VALUES){
-			printf("CUDA reduce (fast version):\n");
-			print_reduce(fast_reduce, NROWS);
+			printf("CUDA reduce:\n");
+			print_reduce(cuda_reduce, NROWS);
 		}
-		free(fast_reduce);
+		free(cuda_reduce);
 	}
 	free_on_device(grid_device);
 	free_grid(fast_grid);

@@ -1,3 +1,5 @@
+#include "data_type.h"
+
 void print_grid(DATA_TYPE **grid, int nrow, int ncol);
 void print_reduce(DATA_TYPE *reduce, int nrow);
 void free_grid(DATA_TYPE **grid);
