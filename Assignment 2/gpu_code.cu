@@ -252,12 +252,12 @@ __global__ void cuda_do_reduce(DATA_TYPE *grid_device, DATA_TYPE *reduce_device,
 		val = vals.x + vals.y + vals.z + vals.w;
 		sum += val;
 	}
-	reduce_device[idx] = sum;
+	reduce_device[idx] = sum / (DATA_TYPE) ncol;
 }
 
 extern "C" void do_reduce_cuda(
 	        DATA_TYPE *grid_device, DATA_TYPE *reduce_host, int nrow, int ncol, 
-        	int block_size, float *time_alloc, float *time_exec, float *time_copy_from
+		int block_size, float *time_alloc, float *time_exec, float *time_copy_from
 	){
 	long long reduce_size = (long long) nrow * (long long) sizeof(DATA_TYPE);
 	DATA_TYPE *reduce_device;

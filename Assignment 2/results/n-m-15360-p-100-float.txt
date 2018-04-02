@@ -1,0 +1,40 @@
+==========
+CONFIGURATION
+==========
+Nrows set to 15360
+Ncols set to 15360
+Number of iterations set to 100
+Using default block size (64)
+Printing timing information
+Not printing grid results
+Averaging row temperature
+==========
+END CONFIGURATION
+==========
+==========
+TIMING
+==========
+CPU: Took 903200 milliseconds overall excluding reduce
+CPU: Reduce took 1059 milliseconds
+CUDA NAIVE: Took 342681 milliseconds overall excluding reduce (2.635687x faster than CPU)
+CUDA NAIVE: Allocating two device buffers took 3.950080 milliseconds
+CUDA NAIVE: Copying two buffers to device took 303.063477 milliseconds
+CUDA NAIVE: Execution of naive kernel took 342039.531250 milliseconds
+CUDA NAIVE: Copying one buffer from device took 150.178757 milliseconds
+CUDA FAST: Took 28268 milliseconds overall excluding reduce (31.951323x faster than CPU)
+CUDA FAST: Allocating one device buffer took 20.451168 milliseconds
+CUDA FAST: No copy to device needed - no time taken
+CUDA FAST: Execution of fast kernel took 28020.035156 milliseconds
+CUDA FAST: Copying buffer from device took 161.388290 milliseconds
+CUDA REDUCE: Took 83 milliseconds overall (12.759036x faster than CPU)
+CUDA REDUCE: Allocating device buffer took 1.264544 milliseconds
+CUDA REDUCE: No copy to device needed - no time taken
+CUDA REDUCE: Execution of reduce kernel took 81.527008 milliseconds
+CUDA REDUCE: Copying buffer from device took 0.043392 milliseconds
+==========
+END TIMING
+==========
+SUCCESS: CPU and CUDA (naive version) grids match
+SUCCESS: CPU and CUDA (fast version) grids match
+SUCCESS: CPU and CUDA reductions match
+

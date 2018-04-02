@@ -56,6 +56,7 @@ int compare_grids(DATA_TYPE **g1, DATA_TYPE **g2, int nrow, int ncol){
 			DATA_TYPE d1 = g1[i][j];
 			DATA_TYPE d2 = g2[i][j];
 			if(fabs(d1 - d2) > epsilon){
+				printf("ERROR: CPU grid has %f, but CUDA grid has %f\n", d1, d2);
 				return 1;
 			}
 		}
@@ -71,6 +72,7 @@ int compare_reductions(DATA_TYPE *r1, DATA_TYPE *r2, int nrow){
 		DATA_TYPE d1 = r1[i];
 		DATA_TYPE d2 = r2[i];
 		if(fabs(d1 - d2) > epsilon){
+			printf("ERROR: CPU reduction has %f, but CUDA reduction has %f\n", d1, d2);
 			return 1;
 		}
 	}

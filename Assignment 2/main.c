@@ -104,12 +104,20 @@ void parse_args(int argc, char *argv[]){
 				printf("ERROR: nrows should be at least 1\n");
 				exit(1);
 			}
+			if(NROWS % 32 != 0){
+				printf("ERROR: nrows should be a multiple of 32\n");
+				exit(1);
+			}
 			nrows_set = 1;
 			break;
 		case 'm':
 			NCOLS = atoi(argv[optind]);
 			if(NCOLS < 5){
 				printf("ERROR: ncols should be at least 5\n");
+				exit(1);
+			}
+			if(NCOLS % 32 != 0){
+				printf("ERROR: ncols should be a multiple of 32\n");
 				exit(1);
 			}
 			ncols_set = 1;
@@ -264,7 +272,6 @@ void print_results(){
 	print_result_check();
 }
 
-// TODO: float/double weights
 static DATA_TYPE **solve_system_cpu(){
 	DATA_TYPE **cur = init_grid(NROWS, NCOLS);
 	DATA_TYPE **next = init_grid(NROWS, NCOLS);
@@ -305,7 +312,7 @@ void reduce_cpu(){
 		for(n = 0; n < NCOLS; n++){
 			sum += results.cpu_grid[i][n];
 		}
-		results.cpu_reduce[i] = sum;
+		results.cpu_reduce[i] = sum / (DATA_TYPE) NCOLS;
 	}
 }
 
