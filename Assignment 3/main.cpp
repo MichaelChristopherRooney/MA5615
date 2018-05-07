@@ -12,6 +12,13 @@
 #include <vector>
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
+
+extern void find_best_device();
+extern void do_cuda_float_part(
+		double a, double b, unsigned int n, unsigned int num_samples, 
+		int block_size, float **float_results
+	);
 
 using namespace std;
 
@@ -20,15 +27,27 @@ double	exponentialIntegralDouble		(const int n,const double x);
 void	outputResultsCpu			(const std::vector< std::vector< float  > > &resultsFloatCpu,const std::vector< std::vector< double > > &resultsDoubleCpu);
 int		parseArguments				(int argc, char **argv);
 void	printUsage				(void);
+void output_results_cuda();
 
-
-bool verbose,timing,cpu;
+bool verbose,timing,cpu,cuda; // TODO: read CUDA value from args
 unsigned int n,numberOfSamples;
 double a,b;	// The interval that we are going to use
+int block_size; // TODO: read from args
+float **cuda_float_results;
+
+// TODO: double results
+void allocate_cuda_results(){
+	cuda_float_results = (float **)malloc(n*sizeof(float *));
+	float *temp = (float *)malloc(numberOfSamples*n*sizeof(float));
+	for(unsigned int i = 0; i < n; i++){
+		cuda_float_results[i] = &(temp[i*numberOfSamples]);
+	}
+}
 
 int main(int argc, char *argv[]) {
 	unsigned int ui,uj;
 	cpu=true;
+	cuda=true;
 	verbose=false;
 	timing=false;
 	// n is the maximum order of the exponential integral that we are going to test
@@ -37,6 +56,7 @@ int main(int argc, char *argv[]) {
 	numberOfSamples=10;
 	a=0.0;
 	b=10.0;
+	block_size = 64;
 
 	struct timeval expoStart, expoEnd;
 
@@ -95,7 +115,11 @@ int main(int argc, char *argv[]) {
 		gettimeofday(&expoEnd, NULL);
 		timeTotalCpu=((expoEnd.tv_sec + expoEnd.tv_usec*0.000001) - (expoStart.tv_sec + expoStart.tv_usec*0.000001));
 	}
-
+	if(cuda){
+		allocate_cuda_results();
+		find_best_device();
+		do_cuda_float_part(a, b, n, numberOfSamples, block_size, cuda_float_results);
+	}
 	if (timing) {
 		if (cpu) {
 			printf ("calculating the exponentials on the cpu took: %f seconds\n",timeTotalCpu);
@@ -106,6 +130,25 @@ int main(int argc, char *argv[]) {
 		if (cpu) {
 			outputResultsCpu (resultsFloatCpu,resultsDoubleCpu);
 		}
+		if(cuda){
+			output_results_cuda();
+		}
+	}
+	if(cpu && cuda){
+		// TODO: move to own function
+		// TODO: compare doubles once implemented
+		unsigned int ui,uj;
+	        for (ui=1;ui<=n;ui++) {
+        	        for (uj=1;uj<=numberOfSamples;uj++) {
+				float r_cpu = resultsFloatCpu[ui-1][uj-1];
+				float r_cuda = cuda_float_results[ui-1][uj-1];
+				if(fabs(r_cpu-r_cuda) > 1.E-5){
+					std::cout << "ERROR: result [" << ui << ", " << uj << "] differs\n";
+					return 1;
+				}
+        	        }
+	        }
+		std::cout << "SUCCESS: CPU and CUDA results match\n";
 	}
 	return 0;
 }
@@ -122,6 +165,19 @@ void	outputResultsCpu				(const std::vector< std::vector< float  > > &resultsFlo
 		}
 	}
 }
+
+void output_results_cuda(){
+	std::cout << "TODO: double CUDA results\n";
+	unsigned int ui, uj;
+	double x,division=(b-a)/((double)(numberOfSamples));
+        for (ui=1;ui<=n;ui++) {
+                for (uj=1;uj<=numberOfSamples;uj++) {
+                        x=a+uj*division;
+                        std::cout << "CUDA==> exponentialIntegralFloat  (" << ui << "," << x <<")=" << cuda_float_results[ui-1][uj-1] << endl;
+                }
+        }
+}
+
 double exponentialIntegralDouble (const int n,const double x) {
 	static const int maxIterations=2000000000;
 	static const double eulerConstant=0.5772156649015329;

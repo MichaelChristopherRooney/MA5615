@@ -1,22 +1,19 @@
-CC=g++
-CFLAGS= -g -pedantic -W -Wall -L/usr/lib
-#CFLAGS= -O3 -finline-functions -ffast-math -fomit-frame-pointer -funroll-loops
+OBJECTS = main.o cuda_code.cu
+CC = g++
+CFLAGS = -Wall -Wextra
+NVCC = nvcc
+NVCCFLAGS = -g -G --use_fast_math
+INCPATH = -I. -I.
+EXEC = exponentialIntegral.out
 
-INCPATH       = -I. -I.
+all: main.o cuda_code.o
+	$(NVCC) -o ${EXEC} main.o cuda_code.o ${NVCCFLAGS}
 
-TARGET=main.o
-EXEC=exponentialIntegral.out
+main.o: main.cpp
+	$(CC) -c main.cpp $(CFLAGS)
 
-
-all: $(TARGET)
-#	$(CC) -Wall -o ${EXEC} ${TARGET}
-	$(CC) -Wall -o ${EXEC} ${TARGET} -lefence
-	
-
-%.o: %.cpp Makefile
-	$(CC) $(CFLAGS) -c $(INCPATH) $<
-	
-install:
+cuda_code.o: cuda_code.cu
+	$(NVCC) -c cuda_code.cu $(NVCCFLAGS)
 
 clean:
-	rm -f *.o ${TARGET}
+	rm -f *.o ${EXEC}
