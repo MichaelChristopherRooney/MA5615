@@ -14,10 +14,9 @@
 #include <time.h>
 #include <unistd.h>
 
-extern void find_best_device();
-extern void do_cuda_float_part(
+extern void do_cuda_part(
 		double a, double b, unsigned int n, unsigned int num_samples, 
-		int block_size, float **float_results
+		int block_size, float **float_results, double **double_results
 	);
 
 using namespace std;
@@ -27,22 +26,20 @@ double	exponentialIntegralDouble		(const int n,const double x);
 void	outputResultsCpu			(const std::vector< std::vector< float  > > &resultsFloatCpu,const std::vector< std::vector< double > > &resultsDoubleCpu);
 int		parseArguments				(int argc, char **argv);
 void	printUsage				(void);
+
 void output_results_cuda();
+void allocate_cuda_results();
+void compare_results();
 
 bool verbose,timing,cpu,cuda; // TODO: read CUDA value from args
 unsigned int n,numberOfSamples;
 double a,b;	// The interval that we are going to use
 int block_size; // TODO: read from args
 float **cuda_float_results;
+double **cuda_double_results;
+std::vector< std::vector< float  > > resultsFloatCpu;
+std::vector< std::vector< double > > resultsDoubleCpu;
 
-// TODO: double results
-void allocate_cuda_results(){
-	cuda_float_results = (float **)malloc(n*sizeof(float *));
-	float *temp = (float *)malloc(numberOfSamples*n*sizeof(float));
-	for(unsigned int i = 0; i < n; i++){
-		cuda_float_results[i] = &(temp[i*numberOfSamples]);
-	}
-}
 
 int main(int argc, char *argv[]) {
 	unsigned int ui,uj;
@@ -55,7 +52,7 @@ int main(int argc, char *argv[]) {
 	n=10;
 	numberOfSamples=10;
 	a=0.0;
-	b=10.0;
+	b=128;
 	block_size = 64;
 
 	struct timeval expoStart, expoEnd;
@@ -85,10 +82,9 @@ int main(int argc, char *argv[]) {
 		return 0;
 	}
 
-	std::vector< std::vector< float  > > resultsFloatCpu;
-	std::vector< std::vector< double > > resultsDoubleCpu;
 
 	double timeTotalCpu=0.0;
+	double timeTotalCuda=0.0;
 
 	try {
 		resultsFloatCpu.resize(n,vector< float >(numberOfSamples));
@@ -117,12 +113,20 @@ int main(int argc, char *argv[]) {
 	}
 	if(cuda){
 		allocate_cuda_results();
-		find_best_device();
-		do_cuda_float_part(a, b, n, numberOfSamples, block_size, cuda_float_results);
+		gettimeofday(&expoStart, NULL);
+		do_cuda_part(a, b, n, numberOfSamples, block_size, cuda_float_results, cuda_double_results);
+		gettimeofday(&expoEnd, NULL);
+		timeTotalCuda=((expoEnd.tv_sec + expoEnd.tv_usec*0.000001) - (expoStart.tv_sec + expoStart.tv_usec*0.000001));
 	}
 	if (timing) {
 		if (cpu) {
 			printf ("calculating the exponentials on the cpu took: %f seconds\n",timeTotalCpu);
+		}
+		if(cuda){
+			printf ("calculating the exponentials with CUDA took: %f seconds\n",timeTotalCuda);
+		}
+		if(cpu && cuda){
+			printf("CUDA version was %f times as fast as CPU version.\n", timeTotalCpu / timeTotalCuda);
 		}
 	}
 
@@ -135,22 +139,31 @@ int main(int argc, char *argv[]) {
 		}
 	}
 	if(cpu && cuda){
-		// TODO: move to own function
-		// TODO: compare doubles once implemented
-		unsigned int ui,uj;
-	        for (ui=1;ui<=n;ui++) {
-        	        for (uj=1;uj<=numberOfSamples;uj++) {
-				float r_cpu = resultsFloatCpu[ui-1][uj-1];
-				float r_cuda = cuda_float_results[ui-1][uj-1];
-				if(fabs(r_cpu-r_cuda) > 1.E-5){
-					std::cout << "ERROR: result [" << ui << ", " << uj << "] differs\n";
-					return 1;
-				}
-        	        }
-	        }
-		std::cout << "SUCCESS: CPU and CUDA results match\n";
+		compare_results();
 	}
 	return 0;
+}
+
+void compare_results(){
+	// TODO: compare doubles once implemented
+	unsigned int ui,uj;
+        for (ui=1;ui<=n;ui++) {
+       	        for (uj=1;uj<=numberOfSamples;uj++) {
+			float f_cpu = resultsFloatCpu[ui-1][uj-1];
+			float f_cuda = cuda_float_results[ui-1][uj-1];
+			if(fabs(f_cpu-f_cuda) > 1.E-5){
+				std::cout << "ERROR: float result [" << ui << ", " << uj << "] differs\n";
+				return;
+			}
+			double d_cpu = resultsDoubleCpu[ui-1][uj-1];
+			double d_cuda = cuda_double_results[ui-1][uj-1];
+			if(fabs(d_cpu-d_cuda) > 1.E-5){
+				std::cout << "ERROR: double result [" << ui << ", " << uj << "] differs\n";
+				return;
+			}
+       	        }
+        }
+	std::cout << "SUCCESS: CPU and CUDA results match\n";
 }
 
 void	outputResultsCpu				(const std::vector< std::vector< float  > > &resultsFloatCpu, const std::vector< std::vector< double > > &resultsDoubleCpu) {
@@ -173,7 +186,8 @@ void output_results_cuda(){
         for (ui=1;ui<=n;ui++) {
                 for (uj=1;uj<=numberOfSamples;uj++) {
                         x=a+uj*division;
-                        std::cout << "CUDA==> exponentialIntegralFloat  (" << ui << "," << x <<")=" << cuda_float_results[ui-1][uj-1] << endl;
+			std::cout << "CUDA==> exponentialIntegralDouble (" << ui << "," << x <<")=" << cuda_double_results[ui-1][uj-1] << " ,";
+			std::cout << "exponentialIntegralFloat  (" << ui << "," << x <<")=" << cuda_float_results[ui-1][uj-1] << endl;
                 }
         }
 }
@@ -341,3 +355,16 @@ void printUsage () {
 	printf("      -v           : will activate the verbose mode  (default: no)\n");
 	printf("     \n");
 }
+
+void allocate_cuda_results(){
+	cuda_float_results = (float **)malloc(n*sizeof(float *));
+	cuda_double_results = (double **)malloc(n*sizeof(double *));
+	float *temp_f = (float *)malloc(numberOfSamples*n*sizeof(float));
+	double *temp_d = (double *)malloc(numberOfSamples*n*sizeof(double));
+	for(unsigned int i = 0; i < n; i++){
+		cuda_float_results[i] = &(temp_f[i*numberOfSamples]);
+		cuda_double_results[i] = &(temp_d[i*numberOfSamples]);
+	}
+}
+
+

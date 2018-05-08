@@ -1,8 +1,8 @@
 OBJECTS = main.o cuda_code.cu
 CC = g++
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -std=c++11
 NVCC = nvcc
-NVCCFLAGS = -g -G --use_fast_math
+NVCCFLAGS = -g -G --use_fast_math -std=c++11
 INCPATH = -I. -I.
 EXEC = exponentialIntegral.out
 
