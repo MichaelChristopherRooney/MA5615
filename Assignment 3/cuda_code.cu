@@ -127,19 +127,19 @@ __global__ void device_part_float(
 	int j;
 	for(j = 1; j <= num_samples - 4; j = j + 4){
 		x = a+(j*division);
-		f_res.x = device_exp_integral_float(my_n, (float) x);
+		f_res.x = device_exp_integral_float(my_n, x);
 		x = a+((j+1)*division);
-		f_res.y = device_exp_integral_float(my_n, (float) x);
+		f_res.y = device_exp_integral_float(my_n, x);
 		x = a+((j+2)*division);
-		f_res.z = device_exp_integral_float(my_n, (float) x);
+		f_res.z = device_exp_integral_float(my_n, x);
 		x = a+((j+3)*division);
-		f_res.w = device_exp_integral_float(my_n, (float) x);
+		f_res.w = device_exp_integral_float(my_n, x);
 		*((float4 *)&(device_float_results[offset + (j-1)])) = f_res;
 	}
 	// Handle any remaining work if num_samples does not divide evenly by 4
 	for(; j <= num_samples; j++){
                 x = a+(j*division);
-                f_res.x = device_exp_integral_float(my_n, (float) x);
+                f_res.x = device_exp_integral_float(my_n, x);
 		device_float_results[offset + (j-1)] = f_res.x;
 	}
 }
@@ -243,6 +243,7 @@ float *do_cuda_part_float(
 	dim3 dimBlock(block_size);
 	dim3 dimGrid ( (n/dimBlock.x) + (!(n%dimBlock.x)?0:1) );
 	device_part_float<<<dimGrid,dimBlock>>>(division, n, num_samples, a, device_float_results);
+	//custom_error_check(cudaMemcpyAsync(float_results[0], device_float_results, size * sizeof(float), cudaMemcpyDeviceToHost),"Failed to copy float results from device.");
 	return device_float_results;
 }
 
@@ -269,7 +270,6 @@ double *do_cuda_part_double(
 // Assuming this is run on CUDA01 it does the following:
 //	1) The float code is run on the GTX 780
 //	2) The double code is run on the Tesla K40c
-// TODO: use async copies rather than the current way
 extern void do_cuda_part(
 		double a, double b, unsigned int n, unsigned int num_samples, 
 		int block_size, float **float_results, double **double_results
@@ -279,10 +279,27 @@ extern void do_cuda_part(
 	int float_device_id = double_device_id == 0 ? 1 : 0;
 	float *device_float_results = do_cuda_part_float((float) a, (float) b, n, num_samples, block_size, float_results, float_device_id);
 	double *device_double_results = do_cuda_part_double(a, b, n, num_samples, block_size, double_results, double_device_id);
+	// Async copy float results
 	cudaSetDevice(float_device_id);
-	custom_error_check(cudaMemcpy(float_results[0], device_float_results, size * sizeof(float), cudaMemcpyDeviceToHost), "Failed to copy data FROM device");
-	custom_error_check(cudaFree(device_float_results), "Failed to free memory on device");
+	custom_error_check(
+		cudaMemcpyAsync(float_results[0], device_float_results, size * sizeof(float), cudaMemcpyDeviceToHost), 
+		"Failed to copy float results from device."
+	);
+	// Async copy double results
 	cudaSetDevice(double_device_id);
-	custom_error_check(cudaMemcpy(double_results[0], device_double_results, size * sizeof(double), cudaMemcpyDeviceToHost), "Failed to copy data FROM device");
-	custom_error_check(cudaFree(device_double_results), "Failed to free memory on device");
+	custom_error_check(
+		cudaMemcpyAsync(double_results[0], device_double_results, size * sizeof(double), cudaMemcpyDeviceToHost), 
+		"Failed to copy double results from device."
+	);
+	// Free device pointers
+	cudaSetDevice(float_device_id);
+	custom_error_check(
+		cudaFree(device_float_results), 
+		"Failed to free float results on device"
+	);
+	cudaSetDevice(double_device_id);
+	custom_error_check(
+		cudaFree(device_double_results), 
+		"Failed to double results on device"
+	);
 }

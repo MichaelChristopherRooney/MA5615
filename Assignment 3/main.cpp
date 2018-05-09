@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
 	n=10;
 	numberOfSamples=10;
 	a=0.0;
-	b=128;
+	b=256;
 	block_size = 64;
 
 	struct timeval expoStart, expoEnd;
@@ -312,7 +312,7 @@ float exponentialIntegralFloat (const int n,const float x) {
 int parseArguments (int argc, char *argv[]) {
 	int c;
 
-	while ((c = getopt (argc, argv, "cghn:m:a:b:tv")) != -1) {
+	while ((c = getopt (argc, argv, "cghn:m:a:b:tvs:")) != -1) {
 		switch(c) {
 			case 'c':
 				cpu=false; break;	 //Skip the CPU test
@@ -326,10 +326,14 @@ int parseArguments (int argc, char *argv[]) {
 				a = atof(optarg); break;
 			case 'b':
 				b = atof(optarg); break;
+			case 's':
+				block_size = atoi(optarg); break;
 			case 't':
 				timing = true; break;
 			case 'v':
 				verbose = true; break;
+			case 'g':
+				cuda=false; break;
 			default:
 				fprintf(stderr, "Invalid option given\n");
 				printUsage();
@@ -351,6 +355,7 @@ void printUsage () {
 	printf("      -h           : will show this usage\n");
 	printf("      -n   size    : will set the n (the order up to which we are calculating the exponential integrals) to size (default: 10)\n");
 	printf("      -m   size    : will set the number of samples taken in the (a,b) interval to size (default: 10)\n");
+	printf("      -s           : will set the block size (default: 256)\n");
 	printf("      -t           : will output the amount of time that it took to generate each norm (default: no)\n");
 	printf("      -v           : will activate the verbose mode  (default: no)\n");
 	printf("     \n");
