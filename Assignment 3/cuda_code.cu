@@ -226,47 +226,7 @@ __global__ void device_part_double(
 	}
 }
 
-// Sets up the device and launches the kernel for the float part.
-float *do_cuda_part_float(
-		float a, float b, unsigned int n, unsigned int num_samples,
-		int block_size, float **float_results, int device_id
-	){
-	cudaSetDevice(device_id);
-	float division = (b-a)/(float)num_samples;
-	unsigned int size = n * num_samples;
-	// Allocate result buffers on device
-	float *device_float_results;
-	custom_error_check(
-		cudaMalloc((void **) &device_float_results, size * sizeof(float)), 
-		"Failed to allocate float result buffer on device."
-	);
-	dim3 dimBlock(block_size);
-	dim3 dimGrid ( (n/dimBlock.x) + (!(n%dimBlock.x)?0:1) );
-	device_part_float<<<dimGrid,dimBlock>>>(division, n, num_samples, a, device_float_results);
-	//custom_error_check(cudaMemcpyAsync(float_results[0], device_float_results, size * sizeof(float), cudaMemcpyDeviceToHost),"Failed to copy float results from device.");
-	return device_float_results;
-}
-
-// Sets up the device and launches the kernel for the double part
-double *do_cuda_part_double(
-		double a, double b, unsigned int n, unsigned int num_samples,
-		int block_size, double **double_results, int device_id
-	){
-	cudaSetDevice(device_id);
-	double division = (b-a)/(double)num_samples;
-	unsigned int size = n * num_samples;
-	// Allocate result buffers on device
-	double *device_double_results;
-	custom_error_check(
-		cudaMalloc((void **) &device_double_results, size * sizeof(double)), 
-		"Failed to allocate double result buffer on device."
-	);
-	dim3 dimBlock(block_size);
-	dim3 dimGrid ( (n/dimBlock.x) + (!(n%dimBlock.x)?0:1) );
-	device_part_double<<<dimGrid,dimBlock>>>(division, n, num_samples, a, device_double_results);
-	return device_double_results;
-}
-
+// TODO: fix up events and record to a struct rather than printing info here
 // Assuming this is run on CUDA01 it does the following:
 //	1) The float code is run on the GTX 780
 //	2) The double code is run on the Tesla K40c
@@ -274,23 +234,83 @@ extern void do_cuda_part(
 		double a, double b, unsigned int n, unsigned int num_samples, 
 		int block_size, float **float_results, double **double_results
 	){
+	// Data needed by both kernels
 	unsigned int size = n * num_samples;
+	double division = (b-a)/(double)num_samples;
+	dim3 dimBlock(block_size);
+	dim3 dimGrid ( (n/dimBlock.x) + (!(n%dimBlock.x)?0:1) );
+	float t = 0;
+
+	// Set up device for double version and device for float version
 	int double_device_id = find_best_device();
 	int float_device_id = double_device_id == 0 ? 1 : 0;
-	float *device_float_results = do_cuda_part_float((float) a, (float) b, n, num_samples, block_size, float_results, float_device_id);
-	double *device_double_results = do_cuda_part_double(a, b, n, num_samples, block_size, double_results, double_device_id);
-	// Async copy float results
+
+	// Set up events
+	cudaSetDevice(float_device_id);
+	cudaEvent_t f_start, f_stop;
+	cudaEventCreate(&f_start);
+	cudaEventCreate(&f_stop);
+	cudaSetDevice(double_device_id);
+	cudaEvent_t d_start, d_stop;
+	cudaEventCreate(&d_start);
+	cudaEventCreate(&d_stop);
+
+	// Set up streams
+	cudaSetDevice(float_device_id);
+	cudaStream_t float_stream;
+	cudaStreamCreate(&float_stream);
+	cudaSetDevice(double_device_id);
+	cudaStream_t double_stream;
+	cudaStreamCreate(&double_stream);
+
+	// Allocate space on float device for results
+	float *device_float_results;
+	cudaSetDevice(float_device_id);
+	cudaEventRecord(f_start, float_stream);
+	custom_error_check(
+		cudaMalloc((void **) &device_float_results, size * sizeof(float)), 
+		"Failed to allocate float result buffer on device."
+	);
+	cudaEventRecord(f_stop, float_stream);
+	cudaEventSynchronize(f_stop);
+	cudaEventElapsedTime(&t, f_start, f_stop);
+	printf("Float alloc: %f\n", t);
+
+	// Allocate space on double device for results
+	double *device_double_results;
+	cudaSetDevice(double_device_id);
+	cudaEventRecord(d_start, double_stream);
+	custom_error_check(
+		cudaMalloc((void **) &device_double_results, size * sizeof(double)), 
+		"Failed to allocate double result buffer on device."
+	);
+	cudaEventRecord(d_stop, double_stream);
+	cudaEventSynchronize(d_stop);
+	cudaEventElapsedTime(&t, d_start, d_stop);
+	printf("Double alloc: %f\n", t);
+
+	// Now run the kernels on different streams
+	cudaSetDevice(float_device_id);
+	cudaEventRecord(f_start, float_stream);
+	device_part_float<<<dimGrid,dimBlock, 0, float_stream>>>((float)division, n, num_samples, (float)a, device_float_results);
+	cudaEventRecord(f_stop, float_stream);
+	cudaSetDevice(double_device_id);
+	cudaEventRecord(d_start, double_stream);
+	device_part_double<<<dimGrid,dimBlock, 0, double_stream>>>(division, n, num_samples, a, device_double_results);
+	cudaEventRecord(d_stop, double_stream);
+
+	// Async copy results
 	cudaSetDevice(float_device_id);
 	custom_error_check(
-		cudaMemcpyAsync(float_results[0], device_float_results, size * sizeof(float), cudaMemcpyDeviceToHost), 
+		cudaMemcpyAsync(float_results[0], device_float_results, size * sizeof(float), cudaMemcpyDeviceToHost, float_stream), 
 		"Failed to copy float results from device."
 	);
-	// Async copy double results
 	cudaSetDevice(double_device_id);
 	custom_error_check(
-		cudaMemcpyAsync(double_results[0], device_double_results, size * sizeof(double), cudaMemcpyDeviceToHost), 
+		cudaMemcpyAsync(double_results[0], device_double_results, size * sizeof(double), cudaMemcpyDeviceToHost, double_stream), 
 		"Failed to copy double results from device."
 	);
+
 	// Free device pointers
 	cudaSetDevice(float_device_id);
 	custom_error_check(
@@ -302,4 +322,16 @@ extern void do_cuda_part(
 		cudaFree(device_double_results), 
 		"Failed to double results on device"
 	);
+
+	cudaEventSynchronize(f_stop);
+	cudaEventElapsedTime(&t, f_start, f_stop);
+	printf("Float kernel: %f\n", t);
+
+	cudaEventSynchronize(d_stop);
+	cudaEventElapsedTime(&t, d_start, d_stop);
+	printf("Double kernel: %f\n", t);
+
+	// Destroy streams
+	cudaStreamDestroy(float_stream);
+	cudaStreamDestroy(double_stream);
 }
