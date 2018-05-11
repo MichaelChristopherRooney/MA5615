@@ -52,8 +52,8 @@ int main(int argc, char *argv[]) {
 	n=10;
 	numberOfSamples=10;
 	a=0.0;
-	b=256;
-	block_size = 64;
+	b=10;
+	block_size = 256;
 
 	struct timeval expoStart, expoEnd;
 
@@ -66,7 +66,10 @@ int main(int argc, char *argv[]) {
 		cout << "b=" << b << endl;
 		cout << "timing=" << timing << endl;
 		cout << "verbose=" << verbose << endl;
+		cout << "block size=" << block_size << endl;
 	}
+		cout << "block size=" << block_size << endl;
+
 
 	// Sanity checks
 	if (a>=b) {
@@ -145,7 +148,6 @@ int main(int argc, char *argv[]) {
 }
 
 void compare_results(){
-	// TODO: compare doubles once implemented
 	unsigned int ui,uj;
         for (ui=1;ui<=n;ui++) {
        	        for (uj=1;uj<=numberOfSamples;uj++) {
@@ -180,7 +182,6 @@ void	outputResultsCpu				(const std::vector< std::vector< float  > > &resultsFlo
 }
 
 void output_results_cuda(){
-	std::cout << "TODO: double CUDA results\n";
 	unsigned int ui, uj;
 	double x,division=(b-a)/((double)(numberOfSamples));
         for (ui=1;ui<=n;ui++) {

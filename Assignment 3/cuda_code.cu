@@ -2,6 +2,17 @@
 #include <iostream>
 #include <string>
 
+// Globals used when setting up and timing kernels
+cudaEvent_t f_start, f_stop, f_copy_start, f_copy_stop;
+cudaEvent_t d_start, d_stop, d_copy_start, d_copy_stop;
+cudaStream_t float_stream, double_stream;
+int double_device_id, float_device_id;
+float *device_float_results;
+double *device_double_results;
+float time_passed = 0;
+
+#define THREADS_PER_N 3
+
 void custom_error_check(cudaError result, std::string err_str){
 	if(result != cudaSuccess){
 		std::cout << err_str << "\n";
@@ -10,8 +21,90 @@ void custom_error_check(cudaError result, std::string err_str){
 	}	
 }
 
-// Taken from provided sample code
-int find_best_device() {
+// Should be called AFTER set_devices()
+void init_events_and_streams(){
+	// Float events and streams
+	cudaSetDevice(float_device_id);
+	cudaEventCreate(&f_start);
+	cudaEventCreate(&f_stop);
+	cudaEventCreate(&f_copy_start);
+	cudaEventCreate(&f_copy_stop);
+	cudaStreamCreate(&float_stream);
+	// Double events and streams
+	cudaSetDevice(double_device_id);
+	cudaEventCreate(&d_start);
+	cudaEventCreate(&d_stop);
+	cudaEventCreate(&d_copy_start);
+	cudaEventCreate(&d_copy_stop);
+	cudaStreamCreate(&double_stream);
+}
+
+void allocate_float_results(unsigned int size){
+	cudaSetDevice(float_device_id);
+	cudaEventRecord(f_start, float_stream);
+	custom_error_check(
+		cudaMalloc((void **) &device_float_results, size * sizeof(float)), 
+		"Failed to allocate float result buffer on device."
+	);
+	cudaEventRecord(f_stop, float_stream);
+	cudaEventSynchronize(f_stop);
+	cudaEventElapsedTime(&time_passed, f_start, f_stop);
+	printf("Float alloc: %f\n", time_passed);
+}
+
+void allocate_double_results(unsigned int size){
+	cudaSetDevice(double_device_id);
+	cudaEventRecord(d_start, double_stream);
+	custom_error_check(
+		cudaMalloc((void **) &device_double_results, size * sizeof(double)), 
+		"Failed to allocate double result buffer on device."
+	);
+	cudaEventRecord(d_stop, double_stream);
+	cudaEventSynchronize(d_stop);
+	cudaEventElapsedTime(&time_passed, d_start, d_stop);
+	printf("Double alloc: %f\n", time_passed);
+}
+
+void copy_results_from_device(float **float_results, double **double_results, unsigned int size){
+	cudaSetDevice(float_device_id);
+	cudaEventRecord(f_copy_start, float_stream);
+	custom_error_check(
+		cudaMemcpyAsync(float_results[0], device_float_results, size * sizeof(float), cudaMemcpyDeviceToHost, float_stream), 
+		"Failed to copy float results from device."
+	);
+	cudaEventRecord(f_copy_stop, float_stream);
+
+	cudaSetDevice(double_device_id);
+	cudaEventRecord(d_copy_start, double_stream);
+	custom_error_check(
+		cudaMemcpyAsync(double_results[0], device_double_results, size * sizeof(double), cudaMemcpyDeviceToHost, double_stream), 
+		"Failed to copy double results from device."
+	);
+	cudaEventRecord(d_copy_stop, double_stream);
+	// Free device pointers
+	cudaSetDevice(float_device_id);
+	custom_error_check(
+		cudaFree(device_float_results), 
+		"Failed to free float results on device"
+	);
+	cudaEventSynchronize(f_copy_stop);
+	cudaEventElapsedTime(&time_passed, f_copy_start, f_copy_stop);
+	printf("Float copy: %f\n", time_passed);
+
+	cudaSetDevice(double_device_id);
+	custom_error_check(
+		cudaFree(device_double_results), 
+		"Failed to double results on device"
+	);
+	cudaEventSynchronize(d_copy_stop);
+	cudaEventElapsedTime(&time_passed, d_copy_start, d_copy_stop);
+	printf("Double copy: %f\n", time_passed);
+
+
+}
+
+// Adapted from provided sample code
+void set_devices() {
 	int i,n,best,bestNumberOfMultiprocessors;
 	cudaGetDeviceCount(&n);
 	int numberOfCUDAcoresForThisCC=0;
@@ -59,7 +152,9 @@ int find_best_device() {
 			bestNumberOfMultiprocessors=x.multiProcessorCount*numberOfCUDAcoresForThisCC;
 		}
 	}
-	return best;
+	double_device_id = best;
+	float_device_id = double_device_id == 0 ? 1 : 0;
+	printf("Float: %d, double: %d\n", float_device_id, double_device_id);
 }
 
 __device__ float device_exp_integral_float(int n, const float x){
@@ -117,15 +212,20 @@ __global__ void device_part_float(
 		float *device_float_results
 	){
 	const int idx=blockIdx.x*blockDim.x+threadIdx.x;
-	const int my_n = idx + 1;
+	const int my_n = (idx/THREADS_PER_N) + 1;
 	if(my_n > n){
 		return;
 	}
-	const int offset = (idx * num_samples);
+	const int offset = ((my_n - 1) * num_samples);
+	int j;
+	int start = ((num_samples / THREADS_PER_N) * (idx % THREADS_PER_N)) + 1;
+	int limit = (num_samples / THREADS_PER_N) * ((idx % THREADS_PER_N) + 1);
+	if(idx % THREADS_PER_N == THREADS_PER_N - 1){
+		limit = num_samples;
+	}	
 	float x;
 	float4 f_res;
-	int j;
-	for(j = 1; j <= num_samples - 4; j = j + 4){
+	for(j = start; j <= limit - 4; j = j + 4){
 		x = a+(j*division);
 		f_res.x = device_exp_integral_float(my_n, x);
 		x = a+((j+1)*division);
@@ -135,9 +235,9 @@ __global__ void device_part_float(
 		x = a+((j+3)*division);
 		f_res.w = device_exp_integral_float(my_n, x);
 		*((float4 *)&(device_float_results[offset + (j-1)])) = f_res;
-	}
+	}	
 	// Handle any remaining work if num_samples does not divide evenly by 4
-	for(; j <= num_samples; j++){
+	for(; j <= limit; j++){
                 x = a+(j*division);
                 f_res.x = device_exp_integral_float(my_n, x);
 		device_float_results[offset + (j-1)] = f_res.x;
@@ -199,15 +299,20 @@ __global__ void device_part_double(
 		double *device_double_results
 	){
 	const int idx=blockIdx.x*blockDim.x+threadIdx.x;
-	const int my_n = idx + 1;
+	const int my_n = (idx/THREADS_PER_N) + 1;
 	if(my_n > n){
 		return;
 	}
-	const int offset = (idx * num_samples);
-	double x;
-	double4 d_res;
+	const int offset = ((my_n - 1) * num_samples);
 	int j;
-	for(j = 1; j <= num_samples - 4; j = j + 4){
+	int start = ((num_samples / THREADS_PER_N) * (idx % THREADS_PER_N)) + 1;
+	int limit = (num_samples / THREADS_PER_N) * ((idx % THREADS_PER_N) + 1);
+	if(idx % THREADS_PER_N == THREADS_PER_N){
+		limit = num_samples;
+	}	
+	double4 d_res;
+	double x;
+	for(j = start; j <= limit - 4; j = j + 4){
 		x = a+(j*division);
 		d_res.x = device_exp_integral_double(my_n, x);
 		x = a+((j+1)*division);
@@ -219,7 +324,7 @@ __global__ void device_part_double(
 		*((double4 *)&(device_double_results[offset + (j-1)])) = d_res;
 	}
 	// Handle any remaining work if num_samples does not divide evenly by 4
-	for(; j <= num_samples; j++){
+	for(; j <= limit; j++){
                 x = a+(j*division);
                 d_res.x = device_exp_integral_double(my_n, x);
 		device_double_results[offset + (j-1)] = d_res.x;
@@ -238,56 +343,12 @@ extern void do_cuda_part(
 	unsigned int size = n * num_samples;
 	double division = (b-a)/(double)num_samples;
 	dim3 dimBlock(block_size);
-	dim3 dimGrid ( (n/dimBlock.x) + (!(n%dimBlock.x)?0:1) );
-	float t = 0;
+	dim3 dimGrid ( ((n*THREADS_PER_N)/dimBlock.x) + (!((n*THREADS_PER_N)%dimBlock.x)?0:1) );
 
-	// Set up device for double version and device for float version
-	int double_device_id = find_best_device();
-	int float_device_id = double_device_id == 0 ? 1 : 0;
-
-	// Set up events
-	cudaSetDevice(float_device_id);
-	cudaEvent_t f_start, f_stop;
-	cudaEventCreate(&f_start);
-	cudaEventCreate(&f_stop);
-	cudaSetDevice(double_device_id);
-	cudaEvent_t d_start, d_stop;
-	cudaEventCreate(&d_start);
-	cudaEventCreate(&d_stop);
-
-	// Set up streams
-	cudaSetDevice(float_device_id);
-	cudaStream_t float_stream;
-	cudaStreamCreate(&float_stream);
-	cudaSetDevice(double_device_id);
-	cudaStream_t double_stream;
-	cudaStreamCreate(&double_stream);
-
-	// Allocate space on float device for results
-	float *device_float_results;
-	cudaSetDevice(float_device_id);
-	cudaEventRecord(f_start, float_stream);
-	custom_error_check(
-		cudaMalloc((void **) &device_float_results, size * sizeof(float)), 
-		"Failed to allocate float result buffer on device."
-	);
-	cudaEventRecord(f_stop, float_stream);
-	cudaEventSynchronize(f_stop);
-	cudaEventElapsedTime(&t, f_start, f_stop);
-	printf("Float alloc: %f\n", t);
-
-	// Allocate space on double device for results
-	double *device_double_results;
-	cudaSetDevice(double_device_id);
-	cudaEventRecord(d_start, double_stream);
-	custom_error_check(
-		cudaMalloc((void **) &device_double_results, size * sizeof(double)), 
-		"Failed to allocate double result buffer on device."
-	);
-	cudaEventRecord(d_stop, double_stream);
-	cudaEventSynchronize(d_stop);
-	cudaEventElapsedTime(&t, d_start, d_stop);
-	printf("Double alloc: %f\n", t);
+	set_devices();
+	init_events_and_streams();
+	allocate_float_results(size);
+	allocate_double_results(size);
 
 	// Now run the kernels on different streams
 	cudaSetDevice(float_device_id);
@@ -300,36 +361,15 @@ extern void do_cuda_part(
 	cudaEventRecord(d_stop, double_stream);
 
 	// Async copy results
-	cudaSetDevice(float_device_id);
-	custom_error_check(
-		cudaMemcpyAsync(float_results[0], device_float_results, size * sizeof(float), cudaMemcpyDeviceToHost, float_stream), 
-		"Failed to copy float results from device."
-	);
-	cudaSetDevice(double_device_id);
-	custom_error_check(
-		cudaMemcpyAsync(double_results[0], device_double_results, size * sizeof(double), cudaMemcpyDeviceToHost, double_stream), 
-		"Failed to copy double results from device."
-	);
-
-	// Free device pointers
-	cudaSetDevice(float_device_id);
-	custom_error_check(
-		cudaFree(device_float_results), 
-		"Failed to free float results on device"
-	);
-	cudaSetDevice(double_device_id);
-	custom_error_check(
-		cudaFree(device_double_results), 
-		"Failed to double results on device"
-	);
+	copy_results_from_device(float_results, double_results, size);
 
 	cudaEventSynchronize(f_stop);
-	cudaEventElapsedTime(&t, f_start, f_stop);
-	printf("Float kernel: %f\n", t);
+	cudaEventElapsedTime(&time_passed, f_start, f_stop);
+	printf("Float kernel: %f\n", time_passed);
 
 	cudaEventSynchronize(d_stop);
-	cudaEventElapsedTime(&t, d_start, d_stop);
-	printf("Double kernel: %f\n", t);
+	cudaEventElapsedTime(&time_passed, d_start, d_stop);
+	printf("Double kernel: %f\n", time_passed);
 
 	// Destroy streams
 	cudaStreamDestroy(float_stream);
