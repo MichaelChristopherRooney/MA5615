@@ -2,6 +2,8 @@
 #include <iostream>
 #include <string>
 
+#include "results.h"
+
 // Globals used when setting up and timing kernels
 cudaEvent_t f_start, f_stop, f_copy_start, f_copy_stop;
 cudaEvent_t d_start, d_stop, d_copy_start, d_copy_stop;
@@ -9,9 +11,9 @@ cudaStream_t float_stream, double_stream;
 int double_device_id, float_device_id;
 float *device_float_results;
 double *device_double_results;
-float time_passed = 0;
+extern struct cuda_results_s timings;
 
-#define THREADS_PER_N 3
+#define THREADS_PER_N 20
 
 void custom_error_check(cudaError result, std::string err_str){
 	if(result != cudaSuccess){
@@ -48,8 +50,7 @@ void allocate_float_results(unsigned int size){
 	);
 	cudaEventRecord(f_stop, float_stream);
 	cudaEventSynchronize(f_stop);
-	cudaEventElapsedTime(&time_passed, f_start, f_stop);
-	printf("Float alloc: %f\n", time_passed);
+	cudaEventElapsedTime(&timings.float_alloc_time, f_start, f_stop);
 }
 
 void allocate_double_results(unsigned int size){
@@ -61,8 +62,7 @@ void allocate_double_results(unsigned int size){
 	);
 	cudaEventRecord(d_stop, double_stream);
 	cudaEventSynchronize(d_stop);
-	cudaEventElapsedTime(&time_passed, d_start, d_stop);
-	printf("Double alloc: %f\n", time_passed);
+	cudaEventElapsedTime(&timings.double_alloc_time, d_start, d_stop);
 }
 
 void copy_results_from_device(float **float_results, double **double_results, unsigned int size){
@@ -88,8 +88,7 @@ void copy_results_from_device(float **float_results, double **double_results, un
 		"Failed to free float results on device"
 	);
 	cudaEventSynchronize(f_copy_stop);
-	cudaEventElapsedTime(&time_passed, f_copy_start, f_copy_stop);
-	printf("Float copy: %f\n", time_passed);
+	cudaEventElapsedTime(&timings.float_copy_time, f_copy_start, f_copy_stop);
 
 	cudaSetDevice(double_device_id);
 	custom_error_check(
@@ -97,8 +96,7 @@ void copy_results_from_device(float **float_results, double **double_results, un
 		"Failed to double results on device"
 	);
 	cudaEventSynchronize(d_copy_stop);
-	cudaEventElapsedTime(&time_passed, d_copy_start, d_copy_stop);
-	printf("Double copy: %f\n", time_passed);
+	cudaEventElapsedTime(&timings.double_copy_time, d_copy_start, d_copy_stop);
 
 
 }
@@ -154,10 +152,9 @@ void set_devices() {
 	}
 	double_device_id = best;
 	float_device_id = double_device_id == 0 ? 1 : 0;
-	printf("Float: %d, double: %d\n", float_device_id, double_device_id);
 }
 
-__device__ float device_exp_integral_float(int n, const float x){
+__device__ float device_exp_integral_float(const int n, const float x){
 	const int max_iter = 2000000000;
 	const float e_const_float = 0.5772156649015329f;
 	const float epsilon_float = 1.E-30f;
@@ -248,7 +245,7 @@ __device__ double device_exp_integral_double(int n, const double x){
 	const int max_iter = 2000000000;
 	const double e_const_double = 0.5772156649015329;
 	const double epsilon_double = 1.E-30;
-	int i, ii, nm1 = n-1;
+	int i, ii = n-1;
 	double a, b, c, d, del, fact, h, psi, ans=0.0;
 	if(n == 0){
 		return exp(-x)/x;
@@ -259,7 +256,7 @@ __device__ double device_exp_integral_double(int n, const double x){
 		d = 1.0f/b;
 		h=d;
 		for(i = 1; i <= max_iter; i++){
-			a=-i*(nm1+i);
+			a=-i*(n-1+i);
 			b+=2.0;
 			d=1.0/(a*d+b);
 			c=b+a/c;
@@ -271,15 +268,15 @@ __device__ double device_exp_integral_double(int n, const double x){
 		}
                 return h*exp(-x);
 	} else {
-		ans=(nm1!=0 ? 1.0/nm1 : -log(x)-e_const_double); // First term
+		ans=(n-1!=0 ? 1.0/(n-1) : -log(x)-e_const_double); // First term
 		fact=1.0;
 		for (i=1;i<=max_iter;i++) {
 			fact*=-x/i;
-			if (i != nm1) {
-				del = -fact/(i-nm1);
+			if (i != (n-1)) {
+				del = -fact/(i-(n-1));
 			} else {
 				psi = -e_const_double;
-				for (ii=1;ii<=nm1;ii++) {
+				for (ii=1;ii<=n-1;ii++) {
 					psi += 1.0/ii;
 				}
 				del=fact*(-log(x)+psi);
@@ -291,43 +288,30 @@ __device__ double device_exp_integral_double(int n, const double x){
 	}
 }
 
+__constant__ double d_division;
+__constant__ int d_n;
+__constant__ int d_num_samples;
+__constant__ double d_a;
+__constant__ double *d_device_double_results;
+
+__shared__ double thread_xs[1024];
+__shared__ int block_n;
+
 // Note: need to use j-1 as an index since j starts at 1 rather than 0
 // Same with using idx rather than my_n, as the minimum my_n is 1 rather than 0.
 // TODO: move variables (like division) to constant memory to save registers
-__global__ void device_part_double(
-		const double division, const int n, const int num_samples, const double a, 
-		double *device_double_results
-	){
-	const int idx=blockIdx.x*blockDim.x+threadIdx.x;
-	const int my_n = (idx/THREADS_PER_N) + 1;
-	if(my_n > n){
+__global__ void device_part_double(){
+	if(threadIdx.x + (blockIdx.x * blockDim.x) >= d_num_samples){
 		return;
 	}
-	const int offset = ((my_n - 1) * num_samples);
-	int j;
-	int start = ((num_samples / THREADS_PER_N) * (idx % THREADS_PER_N)) + 1;
-	int limit = (num_samples / THREADS_PER_N) * ((idx % THREADS_PER_N) + 1);
-	if(idx % THREADS_PER_N == THREADS_PER_N){
-		limit = num_samples;
-	}	
-	double4 d_res;
-	double x;
-	for(j = start; j <= limit - 4; j = j + 4){
-		x = a+(j*division);
-		d_res.x = device_exp_integral_double(my_n, x);
-		x = a+((j+1)*division);
-		d_res.y = device_exp_integral_double(my_n, x);
-		x = a+((j+2)*division);
-		d_res.z = device_exp_integral_double(my_n, x);
-		x = a+((j+3)*division);
-		d_res.w = device_exp_integral_double(my_n, x);
-		*((double4 *)&(device_double_results[offset + (j-1)])) = d_res;
-	}
-	// Handle any remaining work if num_samples does not divide evenly by 4
-	for(; j <= limit; j++){
-                x = a+(j*division);
-                d_res.x = device_exp_integral_double(my_n, x);
-		device_double_results[offset + (j-1)] = d_res.x;
+	int my_sample = (threadIdx.x + (blockIdx.x * blockDim.x)) + 1;
+	double my_x = d_a + (my_sample * d_division);
+	//printf("Thread idx: %d has x id %d in block with x = %d and y = %d and taking sample %d with value %f\n",
+	//	idx, threadIdx.x, blockIdx.x, blockIdx.y, my_sample, my_x);
+	
+	for(int j = blockIdx.y + 1; j <= d_n; j = j + gridDim.y){
+		d_device_double_results[((j-1) * d_num_samples) + (my_sample-1)]
+			= device_exp_integral_double(j, my_x);
 	}
 }
 
@@ -342,34 +326,45 @@ extern void do_cuda_part(
 	// Data needed by both kernels
 	unsigned int size = n * num_samples;
 	double division = (b-a)/(double)num_samples;
-	dim3 dimBlock(block_size);
-	dim3 dimGrid ( ((n*THREADS_PER_N)/dimBlock.x) + (!((n*THREADS_PER_N)%dimBlock.x)?0:1) );
+	dim3 dimBlock_f(block_size);
+	dim3 dimGrid_f ( ((n*THREADS_PER_N)/dimBlock_f.x) + (!((n*THREADS_PER_N)%dimBlock_f.x)?0:1) );
+
+	dim3 dimBlock(block_size, 1);
+	dim3 dimGrid ( (n/dimBlock.x) + (!((n)%dimBlock.x)?0:1), THREADS_PER_N );
 
 	set_devices();
 	init_events_and_streams();
 	allocate_float_results(size);
 	allocate_double_results(size);
 
+	// Allocate constants for double kernel
+	cudaSetDevice(double_device_id);
+	cudaMemcpyToSymbolAsync(d_division, &division, sizeof(double), 0, cudaMemcpyHostToDevice,  double_stream);
+	//cudaMemcpyToSymbolAsync(d_block_size, &block_size, sizeof(double), 0, cudaMemcpyHostToDevice,  double_stream);
+	cudaMemcpyToSymbolAsync(d_n, &n, sizeof(int), 0, cudaMemcpyHostToDevice, double_stream);
+	cudaMemcpyToSymbolAsync(d_num_samples, &num_samples, sizeof(int), 0, cudaMemcpyHostToDevice, double_stream);
+	cudaMemcpyToSymbolAsync(d_a, &a, sizeof(double), 0, cudaMemcpyHostToDevice, double_stream);
+	cudaMemcpyToSymbolAsync(d_device_double_results, &device_double_results, sizeof(double *), 0, cudaMemcpyHostToDevice,  double_stream);
+	
+	
 	// Now run the kernels on different streams
 	cudaSetDevice(float_device_id);
 	cudaEventRecord(f_start, float_stream);
-	device_part_float<<<dimGrid,dimBlock, 0, float_stream>>>((float)division, n, num_samples, (float)a, device_float_results);
+	device_part_float<<<dimGrid_f,dimBlock_f, 0, float_stream>>>((float)division, n, num_samples, (float)a, device_float_results);
 	cudaEventRecord(f_stop, float_stream);
 	cudaSetDevice(double_device_id);
 	cudaEventRecord(d_start, double_stream);
-	device_part_double<<<dimGrid,dimBlock, 0, double_stream>>>(division, n, num_samples, a, device_double_results);
+	device_part_double<<<dimGrid,dimBlock, 0, double_stream>>>();
 	cudaEventRecord(d_stop, double_stream);
 
 	// Async copy results
 	copy_results_from_device(float_results, double_results, size);
 
 	cudaEventSynchronize(f_stop);
-	cudaEventElapsedTime(&time_passed, f_start, f_stop);
-	printf("Float kernel: %f\n", time_passed);
+	cudaEventElapsedTime(&timings.float_kernel_time, f_start, f_stop);
 
 	cudaEventSynchronize(d_stop);
-	cudaEventElapsedTime(&time_passed, d_start, d_stop);
-	printf("Double kernel: %f\n", time_passed);
+	cudaEventElapsedTime(&timings.double_kernel_time, d_start, d_stop);
 
 	// Destroy streams
 	cudaStreamDestroy(float_stream);

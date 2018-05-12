@@ -9,10 +9,10 @@ EXEC = exponentialIntegral.out
 all: main.o cuda_code.o
 	$(NVCC) -o ${EXEC} main.o cuda_code.o ${NVCCFLAGS}
 
-main.o: main.cpp
+main.o: main.cpp results.h
 	$(CC) -c main.cpp $(CFLAGS)
 
-cuda_code.o: cuda_code.cu
+cuda_code.o: cuda_code.cu results.h
 	$(NVCC) -c cuda_code.cu $(NVCCFLAGS)
 
 clean:

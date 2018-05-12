@@ -14,6 +14,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "results.h"
+
 extern void do_cuda_part(
 		double a, double b, unsigned int n, unsigned int num_samples, 
 		int block_size, float **float_results, double **double_results
@@ -40,6 +42,7 @@ double **cuda_double_results;
 std::vector< std::vector< float  > > resultsFloatCpu;
 std::vector< std::vector< double > > resultsDoubleCpu;
 
+struct cuda_results_s timings;
 
 int main(int argc, char *argv[]) {
 	unsigned int ui,uj;
@@ -68,8 +71,6 @@ int main(int argc, char *argv[]) {
 		cout << "verbose=" << verbose << endl;
 		cout << "block size=" << block_size << endl;
 	}
-		cout << "block size=" << block_size << endl;
-
 
 	// Sanity checks
 	if (a>=b) {
@@ -127,12 +128,17 @@ int main(int argc, char *argv[]) {
 		}
 		if(cuda){
 			printf ("calculating the exponentials with CUDA took: %f seconds\n",timeTotalCuda);
+			printf("Allocating space for float results on device took: %f milliseconds\n", timings.float_alloc_time);
+			printf("Allocating space for double results on device took: %f milliseconds\n", timings.double_alloc_time);
+			printf("Float kernel took: %f milliseconds\n", timings.float_kernel_time);
+			printf("Double kernel took: %f milliseconds\n", timings.double_kernel_time);
+			printf("Copying float results from device took: %f milliseconds\n", timings.float_copy_time);
+			printf("Copying double results from device took: %f milliseconds\n", timings.double_copy_time);
 		}
 		if(cpu && cuda){
 			printf("CUDA version was %f times as fast as CPU version.\n", timeTotalCpu / timeTotalCuda);
 		}
 	}
-
 	if (verbose) {
 		if (cpu) {
 			outputResultsCpu (resultsFloatCpu,resultsDoubleCpu);
