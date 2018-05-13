@@ -33,10 +33,10 @@ void output_results_cuda();
 void allocate_cuda_results();
 void compare_results();
 
-bool verbose,timing,cpu,cuda; // TODO: read CUDA value from args
+bool verbose,timing,cpu,cuda;
 unsigned int n,numberOfSamples;
 double a,b;	// The interval that we are going to use
-int block_size; // TODO: read from args
+int block_size;
 float **cuda_float_results;
 double **cuda_double_results;
 std::vector< std::vector< float  > > resultsFloatCpu;
@@ -130,6 +130,8 @@ int main(int argc, char *argv[]) {
 			printf ("calculating the exponentials with CUDA took: %f seconds\n",timeTotalCuda);
 			printf("Allocating space for float results on device took: %f milliseconds\n", timings.float_alloc_time);
 			printf("Allocating space for double results on device took: %f milliseconds\n", timings.double_alloc_time);
+			printf("Copying constants to float kernel took: %f milliseconds\n", timings.float_constant_copy_time);
+			printf("Copying constants to double kernel took: %f milliseconds\n", timings.double_constant_copy_time);
 			printf("Float kernel took: %f milliseconds\n", timings.float_kernel_time);
 			printf("Double kernel took: %f milliseconds\n", timings.double_kernel_time);
 			printf("Copying float results from device took: %f milliseconds\n", timings.float_copy_time);

@@ -7,4 +7,6 @@ struct cuda_results_s {
 	float double_kernel_time;
 	float float_copy_time;
 	float double_copy_time;
+	float float_constant_copy_time;
+	float double_constant_copy_time;
 };

@@ -5,15 +5,14 @@
 #include "results.h"
 
 // Globals used when setting up and timing kernels
-cudaEvent_t f_start, f_stop, f_copy_start, f_copy_stop;
-cudaEvent_t d_start, d_stop, d_copy_start, d_copy_stop;
+cudaEvent_t f_start, f_stop, f_copy_start, f_copy_stop, f_const_copy_start, f_const_copy_stop;
+cudaEvent_t d_start, d_stop, d_copy_start, d_copy_stop, d_const_copy_start, d_const_copy_stop;
 cudaStream_t float_stream, double_stream;
 int double_device_id, float_device_id;
 float *device_float_results;
 double *device_double_results;
 extern struct cuda_results_s timings;
 
-#define THREADS_PER_N 4
 #define GRID_Y_SIZE 128
 
 void custom_error_check(cudaError result, std::string err_str){
@@ -32,6 +31,8 @@ void init_events_and_streams(){
 	cudaEventCreate(&f_stop);
 	cudaEventCreate(&f_copy_start);
 	cudaEventCreate(&f_copy_stop);
+	cudaEventCreate(&f_const_copy_start);
+	cudaEventCreate(&f_const_copy_stop);
 	cudaStreamCreate(&float_stream);
 	// Double events and streams
 	cudaSetDevice(double_device_id);
@@ -39,6 +40,8 @@ void init_events_and_streams(){
 	cudaEventCreate(&d_stop);
 	cudaEventCreate(&d_copy_start);
 	cudaEventCreate(&d_copy_stop);
+	cudaEventCreate(&d_const_copy_start);
+	cudaEventCreate(&d_const_copy_stop);
 	cudaStreamCreate(&double_stream);
 }
 
@@ -209,9 +212,6 @@ __constant__ int f_num_samples;
 __constant__ float f_a;
 __constant__ float *f_device_float_results;
 
-// Note: need to use j-1 as an index since j starts at 1 rather than 0
-// Same with using idx rather than my_n, as the minimum my_n is 1 rather than 0.
-// TODO: move variables (like division) to constant memory to save registers
 __global__ void device_part_float(){
 	if(threadIdx.x + (blockIdx.x * blockDim.x) >= f_num_samples){
 		return;
@@ -277,10 +277,6 @@ __constant__ int d_num_samples;
 __constant__ double d_a;
 __constant__ double *d_device_double_results;
 
-__shared__ double thread_xs[256];
-__shared__ int thread_samples[256];
-__shared__ int block_n;
-
 __global__ void device_part_double(){
 	if(threadIdx.x + (blockIdx.x * blockDim.x) >= d_num_samples){
 		return;
@@ -301,22 +297,26 @@ void allocate_constants(
 	){
 	// Allocate constants for the float kernel
 	cudaSetDevice(float_device_id);
+	cudaEventRecord(f_const_copy_start, float_stream);
 	cudaMemcpyToSymbolAsync(f_division, &f_division_h, sizeof(float), 0, cudaMemcpyHostToDevice, float_stream);
 	cudaMemcpyToSymbolAsync(f_n, &n, sizeof(int), 0, cudaMemcpyHostToDevice, float_stream);
 	cudaMemcpyToSymbolAsync(f_num_samples, &num_samples, sizeof(int), 0, cudaMemcpyHostToDevice, float_stream);
 	cudaMemcpyToSymbolAsync(f_a, &f_a_h, sizeof(float), 0, cudaMemcpyHostToDevice, float_stream);
 	cudaMemcpyToSymbolAsync(f_device_float_results, &device_float_results, sizeof(float *), 0, cudaMemcpyHostToDevice,  float_stream);
+	cudaEventRecord(f_const_copy_stop, float_stream);
 
 	// Allocate constants for double kernel
 	cudaSetDevice(double_device_id);
+	cudaEventRecord(d_const_copy_start, double_stream);
 	cudaMemcpyToSymbolAsync(d_division, &division, sizeof(double), 0, cudaMemcpyHostToDevice,  double_stream);
 	cudaMemcpyToSymbolAsync(d_n, &n, sizeof(int), 0, cudaMemcpyHostToDevice, double_stream);
 	cudaMemcpyToSymbolAsync(d_num_samples, &num_samples, sizeof(int), 0, cudaMemcpyHostToDevice, double_stream);
 	cudaMemcpyToSymbolAsync(d_a, &a, sizeof(double), 0, cudaMemcpyHostToDevice, double_stream);
 	cudaMemcpyToSymbolAsync(d_device_double_results, &device_double_results, sizeof(double *), 0, cudaMemcpyHostToDevice,  double_stream);
+	cudaEventRecord(d_const_copy_stop, double_stream);
+
 }
 
-// TODO: fix up events and record to a struct rather than printing info here
 // Assuming this is run on CUDA01 it does the following:
 //	1) The float code is run on the GTX 780
 //	2) The double code is run on the Tesla K40c
@@ -324,11 +324,11 @@ extern void do_cuda_part(
 		double a, double b, unsigned int n, unsigned int num_samples, 
 		int block_size, float **float_results, double **double_results
 	){
-	// Data needed by both kernels
 	unsigned int size = n * num_samples;
 	double division = (b-a)/(double)num_samples;
 	dim3 dimBlock(block_size, 1);
-	dim3 dimGrid ( (n/dimBlock.x) + (!((n)%dimBlock.x)?0:1), GRID_Y_SIZE );
+	dim3 dimGrid ( (n/dimBlock.x) + (!(n%dimBlock.x)?0:1), GRID_Y_SIZE );
+
 	set_devices();
 	init_events_and_streams();
 	allocate_float_results(size);
@@ -338,11 +338,13 @@ extern void do_cuda_part(
 	// Now run the kernels on different streams
 	// Double kernel
 	cudaSetDevice(double_device_id);
+	cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 	cudaEventRecord(d_start, double_stream);
 	device_part_double<<<dimGrid,dimBlock, 0, double_stream>>>();
 	cudaEventRecord(d_stop, double_stream);
 	// Float kernel
 	cudaSetDevice(float_device_id);
+	cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 	cudaEventRecord(f_start, float_stream);
 	device_part_float<<<dimGrid,dimBlock, 0, float_stream>>>();
 	cudaEventRecord(f_stop, float_stream);
@@ -350,11 +352,17 @@ extern void do_cuda_part(
 	// Async copy results
 	copy_results_from_device(float_results, double_results, size);
 
+	cudaSetDevice(float_device_id);
 	cudaEventSynchronize(f_stop);
+	cudaEventSynchronize(f_const_copy_stop);
 	cudaEventElapsedTime(&timings.float_kernel_time, f_start, f_stop);
+	cudaEventElapsedTime(&timings.float_constant_copy_time, f_const_copy_start, f_const_copy_stop);
 
+	cudaSetDevice(double_device_id);
 	cudaEventSynchronize(d_stop);
+	cudaEventSynchronize(d_const_copy_stop);
 	cudaEventElapsedTime(&timings.double_kernel_time, d_start, d_stop);
+	cudaEventElapsedTime(&timings.double_constant_copy_time, d_const_copy_start, d_const_copy_stop);
 
 	// Destroy streams
 	cudaStreamDestroy(float_stream);
